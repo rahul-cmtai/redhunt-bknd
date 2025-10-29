@@ -1,0 +1,6 @@
+employer,name,email,mobile,uan,position,offerDate,offerStatus,joiningDate,reason,notes,joiningStatus,verified
+652f5e7b3a9b1a2c4c8b90e1,Rahul Sharma,rahul.sharma@example.com,9876543210,UAN12345,Software Engineer,2025-09-01,Offered,2025-10-10,,Excited to join,pending,False
+652f5e7b3a9b1a2c4c8b90e1,Pooja Verma,pooja.verma@example.com,9876501234,UAN67890,Data Analyst,2025-08-20,Accepted,2025-10-05,,Has analytics background,joined,True
+652f5e7b3a9b1a2c4c8b90e1,Amit Kumar,amit.kumar@example.com,9812312312,UAN99887,Project Manager,2025-07-10,Rejected,,Not interested in relocation,,not_joined,False
+652f5e7b3a9b1a2c4c8b90e1,Neha Singh,neha.singh@example.com,9823456789,UAN55667,UI Designer,2025-09-15,Accepted,2025-10-15,,Will relocate soon,pending,True
+652f5e7b3a9b1a2c4c8b90e1,Suresh Reddy,suresh.reddy@example.com,9845012345,UAN44332,QA Engineer,2025-09-05,Offered,2025-10-12,,Needs accommodation help,pending,False
