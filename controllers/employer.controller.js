@@ -531,3 +531,96 @@ export async function updateEmployerProfile(req, res) {
   if (!employer) return res.status(404).json({ message: 'Not found' });
   res.json(employer);
 }
+
+// Allow employer to update limited fields on a verified candidate user and record history
+export async function updateCandidateUserByEmployer(req, res) {
+  const employerId = req.user.id;
+  const { id } = req.params;
+  const allowedFields = [
+    'presentCompany', 'designation', 'workLocation', 'currentCtc', 'expectedHikePercentage',
+    'noticePeriod', 'negotiableDays', 'skillSets', 'verificationNotes'
+  ];
+  const updates = {};
+  for (const key of allowedFields) {
+    if (key in req.body) updates[key] = req.body[key];
+  }
+  if (Object.keys(updates).length === 0) {
+    return res.status(400).json({ message: 'No allowed fields to update' });
+  }
+
+  const [candidateUser, employer] = await Promise.all([
+    CandidateUser.findById(id),
+    Employer.findById(employerId).select('companyName hrName')
+  ]);
+  if (!candidateUser) return res.status(404).json({ message: 'Candidate user not found' });
+
+  // Apply updates
+  Object.assign(candidateUser, updates);
+  await candidateUser.save();
+
+  // Append update history on candidate user
+  try {
+    await candidateUser.appendUpdateHistory({
+      role: 'employer',
+      name: employer?.hrName || employer?.companyName || 'Employer',
+      companyName: employer?.companyName || null,
+      employerId: employerId,
+      notes: req.body?.notes || null
+    });
+  } catch (_) {}
+
+  // Create audit log
+  try {
+    await AuditLog.create({
+      actorType: 'employer',
+      actorId: employerId,
+      action: 'update_candidate_user',
+      targetType: 'candidate_user',
+      targetId: candidateUser._id,
+      metadata: { updatedFields: Object.keys(updates) }
+    });
+  } catch (_) {}
+
+  res.json({
+    success: true,
+    id: candidateUser.id,
+    updatedFields: Object.keys(updates),
+    updateHistoryCount: candidateUser.updateHistory?.length || 0
+  });
+}
+
+// Employer can update their own updateHistory entry (only entries created by this employer)
+export async function updateCandidateUserHistoryByEmployer(req, res) {
+  const employerId = req.user.id;
+  const { id, entryId } = req.params;
+  const { date, notes } = req.body || {};
+  const user = await CandidateUser.findById(id);
+  if (!user) return res.status(404).json({ message: 'Candidate user not found' });
+  const entry = (user.updateHistory || []).find((e) => String(e._id) === String(entryId));
+  if (!entry) return res.status(404).json({ message: 'History entry not found' });
+  if (String(entry.employer) !== String(employerId) || entry.updatedByRole !== 'employer') {
+    return res.status(403).json({ message: 'Not allowed to modify this entry' });
+  }
+  if (date) entry.date = new Date(date);
+  if (typeof notes === 'string') entry.notes = notes;
+  user.resequenceUpdateHistory();
+  await user.save();
+  return res.json({ updated: true });
+}
+
+// Employer can delete their own updateHistory entry
+export async function deleteCandidateUserHistoryByEmployer(req, res) {
+  const employerId = req.user.id;
+  const { id, entryId } = req.params;
+  const user = await CandidateUser.findById(id);
+  if (!user) return res.status(404).json({ message: 'Candidate user not found' });
+  const target = (user.updateHistory || []).find((e) => String(e._id) === String(entryId));
+  if (!target) return res.status(404).json({ message: 'History entry not found' });
+  if (String(target.employer) !== String(employerId) || target.updatedByRole !== 'employer') {
+    return res.status(403).json({ message: 'Not allowed to delete this entry' });
+  }
+  user.updateHistory = (user.updateHistory || []).filter((e) => String(e._id) !== String(entryId));
+  user.resequenceUpdateHistory();
+  await user.save();
+  return res.json({ deleted: true });
+}

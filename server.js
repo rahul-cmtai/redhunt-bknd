@@ -10,6 +10,7 @@ import authRoutes from './routes/auth.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import employerRoutes from './routes/employer.routes.js';
 import reportRoutes from './routes/report.routes.js';
+import candidateRoutes from './routes/candidate.routes.js';
 
 dotenv.config();
 
@@ -33,6 +34,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/employer', employerRoutes);
 app.use('/api', reportRoutes);
+app.use('/api/candidate', candidateRoutes);
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });

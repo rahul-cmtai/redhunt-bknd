@@ -10,6 +10,9 @@ import {
   employerReports,
   employerProfile,
   updateEmployerProfile,
+  updateCandidateUserByEmployer,
+  updateCandidateUserHistoryByEmployer,
+  deleteCandidateUserHistoryByEmployer,
 } from '../controllers/employer.controller.js';
 
 const router = Router();
@@ -26,5 +29,11 @@ router.get('/metrics', employerMetrics);
 router.get('/reports', employerReports);
 router.get('/profile', employerProfile);
 router.put('/profile', updateEmployerProfile);
+
+// Update verified candidate user (limited fields) by employer and record history
+router.patch('/candidate-users/:id', updateCandidateUserByEmployer);
+// Manage employer-created update history entries
+router.patch('/candidate-users/:id/update-history/:entryId', updateCandidateUserHistoryByEmployer);
+router.delete('/candidate-users/:id/update-history/:entryId', deleteCandidateUserHistoryByEmployer);
 
 export default router;

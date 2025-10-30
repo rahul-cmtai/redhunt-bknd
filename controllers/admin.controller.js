@@ -1,6 +1,7 @@
 import Employer from '../models/Employer.js';
 import Candidate from '../models/Candidate.js';
 import CandidateUser from '../models/CandidateUser.js';
+import Admin from '../models/Admin.js';
 
 export async function listEmployers(_req, res) {
   const employers = await Employer.find().sort({ createdAt: -1 }).select('-passwordHash');
@@ -80,6 +81,16 @@ export async function approveCandidateUser(req, res) {
   
   // Use the model method for verification
   await user.verifyUser(adminId, notes);
+  // Append update history
+  try {
+    const admin = await Admin.findById(adminId).select('name');
+    await user.appendUpdateHistory({
+      role: 'admin',
+      name: admin?.name || 'Admin',
+      adminId: adminId,
+      notes: notes || 'approved'
+    });
+  } catch (_) {}
   
   res.json({ 
     id: user.id, 
@@ -88,6 +99,36 @@ export async function approveCandidateUser(req, res) {
     verifiedAt: user.verifiedAt,
     verificationNotes: user.verificationNotes
   });
+}
+
+// Update a specific updateHistory entry (admin)
+export async function updateCandidateUserHistoryEntry(req, res) {
+  const { id, entryId } = req.params;
+  const { date, notes } = req.body || {};
+  const user = await CandidateUser.findById(id);
+  if (!user) return res.status(404).json({ message: 'Candidate user not found' });
+  const entry = (user.updateHistory || []).find((e) => String(e._id) === String(entryId));
+  if (!entry) return res.status(404).json({ message: 'History entry not found' });
+  if (date) entry.date = new Date(date);
+  if (typeof notes === 'string') entry.notes = notes;
+  user.resequenceUpdateHistory();
+  await user.save();
+  return res.json({ updated: true });
+}
+
+// Delete a specific updateHistory entry (admin)
+export async function deleteCandidateUserHistoryEntry(req, res) {
+  const { id, entryId } = req.params;
+  const user = await CandidateUser.findById(id);
+  if (!user) return res.status(404).json({ message: 'Candidate user not found' });
+  const before = user.updateHistory?.length || 0;
+  user.updateHistory = (user.updateHistory || []).filter((e) => String(e._id) !== String(entryId));
+  if (user.updateHistory.length === before) {
+    return res.status(404).json({ message: 'History entry not found' });
+  }
+  user.resequenceUpdateHistory();
+  await user.save();
+  return res.json({ deleted: true });
 }
 
 export async function rejectCandidateUser(req, res) {
@@ -100,6 +141,16 @@ export async function rejectCandidateUser(req, res) {
   
   // Use the model method for rejection
   await user.rejectUser(adminId, notes);
+  // Append update history
+  try {
+    const admin = await Admin.findById(adminId).select('name');
+    await user.appendUpdateHistory({
+      role: 'admin',
+      name: admin?.name || 'Admin',
+      adminId: adminId,
+      notes: notes || 'rejected'
+    });
+  } catch (_) {}
   
   res.json({ 
     id: user.id, 
@@ -174,6 +225,16 @@ export async function updateCandidateUserStatus(req, res) {
   }
   
   await user.save();
+  // Append update history
+  try {
+    const admin = await Admin.findById(adminId).select('name');
+    await user.appendUpdateHistory({
+      role: 'admin',
+      name: admin?.name || 'Admin',
+      adminId: adminId,
+      notes: notes || `status: ${status}`
+    });
+  } catch (_) {}
   
   res.json({ 
     id: user.id, 

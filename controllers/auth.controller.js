@@ -433,3 +433,54 @@ export async function resendEmailOtp(req, res) {
   } catch (_e) {}
   return res.json({ sent: true });
 }
+
+// ----- Candidate dashboard endpoints -----
+export async function candidateMe(req, res) {
+  const id = req.user.id;
+  const me = await CandidateUser.findById(id)
+    .select('-passwordHash -emailOtpCode -emailOtpExpiresAt');
+  if (!me) return res.status(404).json({ message: 'Not found' });
+  return res.json(me);
+}
+
+export async function getCandidateUpdateHistory(req, res) {
+  const id = req.user.id;
+  const me = await CandidateUser.findById(id).select('updateHistory');
+  if (!me) return res.status(404).json({ message: 'Not found' });
+  return res.json({ updateHistory: me.updateHistory || [] });
+}
+
+export async function updateCandidateProfile(req, res) {
+  const id = req.user.id;
+  const allowed = ['phone', 'secondaryEmail', 'currentAddress'];
+  const update = {};
+  for (const k of allowed) if (k in req.body) update[k] = req.body[k];
+  if (Object.keys(update).length === 0) {
+    return res.status(400).json({ message: 'No allowed fields to update' });
+  }
+  if (update.secondaryEmail && !/^\S+@\S+\.\S+$/.test(update.secondaryEmail)) {
+    return res.status(400).json({ message: 'Invalid email format' });
+  }
+  const updated = await CandidateUser.findByIdAndUpdate(id, update, { new: true })
+    .select('-passwordHash -emailOtpCode -emailOtpExpiresAt');
+  if (!updated) return res.status(404).json({ message: 'Not found' });
+  return res.json(updated);
+}
+
+export async function changeCandidatePassword(req, res) {
+  const id = req.user.id;
+  const { currentPassword, newPassword } = req.body || {};
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ message: 'currentPassword and newPassword are required' });
+  }
+  const user = await CandidateUser.findById(id).select('+passwordHash');
+  if (!user) return res.status(404).json({ message: 'Not found' });
+  const ok = await bcrypt.compare(currentPassword, user.passwordHash);
+  if (!ok) return res.status(401).json({ message: 'Current password incorrect' });
+  if (String(newPassword).length < 6) {
+    return res.status(400).json({ message: 'Password must be at least 6 characters' });
+  }
+  user.passwordHash = await bcrypt.hash(newPassword, 10);
+  await user.save();
+  return res.json({ changed: true });
+}

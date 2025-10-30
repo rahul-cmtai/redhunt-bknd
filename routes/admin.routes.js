@@ -6,6 +6,10 @@ import {
   approveCandidateUser, rejectCandidateUser, suspendCandidateUser, unsuspendCandidateUser,
   getPendingCandidateUsers, getVerifiedCandidateUsers, getCandidateUserDetails, updateCandidateUserStatus
 } from '../controllers/admin.controller.js';
+import { 
+  updateCandidateUserHistoryEntry, 
+  deleteCandidateUserHistoryEntry 
+} from '../controllers/admin.controller.js';
 
 const router = Router();
 
@@ -35,6 +39,8 @@ router.patch('/candidate-users/:id/reject', rejectCandidateUser);
 router.patch('/candidate-users/:id/suspend', suspendCandidateUser);
 router.patch('/candidate-users/:id/unsuspend', unsuspendCandidateUser);
 router.patch('/candidate-users/:id/status', updateCandidateUserStatus);
+router.patch('/candidate-users/:id/update-history/:entryId', updateCandidateUserHistoryEntry);
+router.delete('/candidate-users/:id/update-history/:entryId', deleteCandidateUserHistoryEntry);
 
 export default router;
 

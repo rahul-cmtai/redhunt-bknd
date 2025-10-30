@@ -99,7 +99,21 @@ const CandidateUserSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId, 
       ref: 'Employer',
       default: null 
-    }
+    },
+
+    // Update history: tracks admin/employer updates with sequential points
+    updateHistory: [
+      {
+        points: { type: Number, required: true },
+        date: { type: Date, default: Date.now },
+        updatedByRole: { type: String, enum: ['admin', 'employer'], required: true },
+        updatedByName: { type: String, default: null },
+        companyName: { type: String, default: null },
+        employer: { type: mongoose.Schema.Types.ObjectId, ref: 'Employer', default: null },
+        admin: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+        notes: { type: String, default: null }
+      }
+    ]
   },
   { timestamps: true }
 );
@@ -113,6 +127,7 @@ CandidateUserSchema.index({ emailVerified: 1 });
 CandidateUserSchema.index({ sector: 1 });
 CandidateUserSchema.index({ workLocation: 1 });
 CandidateUserSchema.index({ skillSets: 1 });
+CandidateUserSchema.index({ 'updateHistory.date': 1 });
 
 // Pre-save middleware to calculate profile completeness
 CandidateUserSchema.pre('save', function(next) {
@@ -160,6 +175,32 @@ CandidateUserSchema.methods.rejectUser = function(adminId, notes) {
     this.verificationNotes = notes;
   }
   return this.save();
+};
+
+// Method to append an update history entry with auto-incremented points
+CandidateUserSchema.methods.appendUpdateHistory = function({ role, name, companyName, employerId, adminId, notes }) {
+  const nextPoints = (Array.isArray(this.updateHistory) ? this.updateHistory.length : 0) + 1;
+  this.updateHistory = this.updateHistory || [];
+  this.updateHistory.push({
+    points: nextPoints,
+    updatedByRole: role,
+    updatedByName: name || null,
+    companyName: companyName || null,
+    employer: employerId || null,
+    admin: adminId || null,
+    notes: notes || null
+  });
+  return this.save();
+};
+
+// Helper to resequence points after modifications or deletions
+CandidateUserSchema.methods.resequenceUpdateHistory = function() {
+  if (!Array.isArray(this.updateHistory)) return this;
+  // Keep current order, just reset points sequentially
+  this.updateHistory.forEach((entry, idx) => {
+    entry.points = idx + 1;
+  });
+  return this;
 };
 
 // Static method to find verified users

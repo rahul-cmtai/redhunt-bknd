@@ -79,10 +79,16 @@ API Overview
   - GET `/api/admin/reports`
   - GET `/api/admin/candidates`
   - GET `/api/admin/candidate-users`
+  - GET `/api/admin/candidate-users/pending`
+  - GET `/api/admin/candidate-users/verified`
+  - GET `/api/admin/candidate-users/:id`
   - PATCH `/api/admin/candidate-users/:id/approve`
   - PATCH `/api/admin/candidate-users/:id/reject`
   - PATCH `/api/admin/candidate-users/:id/suspend`
   - PATCH `/api/admin/candidate-users/:id/unsuspend`
+  - PATCH `/api/admin/candidate-users/:id/status` { status: `pending|approved|rejected|suspended`, notes? }
+  - PATCH `/api/admin/candidate-users/:id/update-history/:entryId` { date?, notes? }
+  - DELETE `/api/admin/candidate-users/:id/update-history/:entryId`
 
 - Employer (requires Bearer token of employer)
   - POST `/api/employer/candidates` { name, uan?, email, mobile?, position?, offerDate?, offerStatus?, joiningDate?, reason?, notes? }
@@ -96,12 +102,30 @@ API Overview
   - GET `/api/employer/reports`
   - GET `/api/employer/profile`
   - PUT `/api/employer/profile` { companyName?, industry?, hrName?, contactNumber?, email?, companyCode? }
+  - PATCH `/api/employer/candidate-users/:id` { presentCompany?, designation?, workLocation?, currentCtc?, expectedHikePercentage?, noticePeriod?, negotiableDays?, skillSets?, verificationNotes?, notes? }
+    - Updates only allowed fields on a verified candidate user
+    - Appends an update-history entry with sequential point, date, employer HR/company name
+  - PATCH `/api/employer/candidate-users/:id/update-history/:entryId` { date?, notes? }
+    - Only allowed for entries created by this employer
+  - DELETE `/api/employer/candidate-users/:id/update-history/:entryId`
+    - Only allowed for entries created by this employer
 
 Candidate (requires Bearer token of candidate)
 
-- After registration, candidate must be approved by an admin before login succeeds.
-- Login requires verified email for employer and candidate. Use `/api/auth/verify-email` to verify.
-- Use the candidate JWT with role `candidate` to access future candidate-protected endpoints (guard: `requireApprovedCandidate`).
+- Notes
+  - After registration, candidate must be approved by an admin before login succeeds.
+  - Login requires verified email for employer and candidate. Use `/api/auth/verify-email` to verify.
+  - All candidate endpoints below require `requireApprovedCandidate`.
+
+- Dashboard APIs
+  - GET `/api/candidate/me`
+    - Returns the authenticated candidate profile (sans sensitive fields).
+  - GET `/api/candidate/update-history`
+    - Returns `updateHistory` timeline added by admin/employer.
+  - PUT `/api/candidate/profile` { phone?, secondaryEmail?, currentAddress? }
+    - Allows candidate to update only personal contact fields.
+  - PATCH `/api/candidate/password` { currentPassword, newPassword }
+    - Change password (min length 6). Verifies current password.
 
 ## Email Invitation System
 
@@ -132,4 +156,32 @@ When an employer adds a candidate through `POST /api/employer/candidates`, the s
    - Detailed logging for troubleshooting
    - Graceful degradation
 
+
+## CandidateUser Update History
+
+Each `CandidateUser` maintains a timeline of updates in `updateHistory`:
+
+- points: Auto-incremented sequence (1, 2, 3, ...)
+- date: ISO date when the update occurred
+- updatedByRole: `admin | employer`
+- updatedByName: Name of admin or HR
+- companyName: Employer company name (when role is employer)
+- employer: Employer ObjectId (when role is employer)
+- admin: Admin ObjectId (when role is admin)
+- notes: Optional context (e.g., "approved", "status: suspended")
+
+Example entry:
+
+```json
+{
+  "points": 3,
+  "date": "2025-10-30T10:12:00.000Z",
+  "updatedByRole": "employer",
+  "updatedByName": "Rahul Verma",
+  "companyName": "Acme Corp",
+  "employer": "64d...",
+  "admin": null,
+  "notes": "designation updated to Senior Engineer"
+}
+```
 
