@@ -21,7 +21,7 @@ app.use(helmet());
 const corsOptions = {
   origin: [
     "http://localhost:3000",
-    "https://redhunt.vercel.app",
+    "https://redhunt.vercel.app/",
   ],
   credentials: true,
 };
