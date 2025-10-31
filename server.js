@@ -18,7 +18,14 @@ const app = express();
 
 // Security middlewares
 app.use(helmet());
-app.use(cors({ origin: '*', credentials: false }));
+const corsOptions = {
+  origin: [
+    "http://localhost:3000",
+    "https://redhunt.vercel.app",
+  ],
+  credentials: true,
+};
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(morgan('dev'));
 app.set('trust proxy', 1);
