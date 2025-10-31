@@ -13,6 +13,7 @@ import {
   updateCandidateUserByEmployer,
   updateCandidateUserHistoryByEmployer,
   deleteCandidateUserHistoryByEmployer,
+  getCandidateUserUpdateHistoryByEmployer,
 } from '../controllers/employer.controller.js';
 
 const router = Router();
@@ -35,5 +36,7 @@ router.patch('/candidate-users/:id', updateCandidateUserByEmployer);
 // Manage employer-created update history entries
 router.patch('/candidate-users/:id/update-history/:entryId', updateCandidateUserHistoryByEmployer);
 router.delete('/candidate-users/:id/update-history/:entryId', deleteCandidateUserHistoryByEmployer);
+// Read candidate user's update history (read-only; includes comments)
+router.get('/candidate-users/:id/update-history', getCandidateUserUpdateHistoryByEmployer);
 
 export default router;

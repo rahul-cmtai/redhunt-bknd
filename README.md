@@ -1,4 +1,4 @@
-RedHunt Backend (Node.js, Express, MongoDB)
+Red-Flagged Backend (Node.js, Express, MongoDB)
 
 Quick start
 
@@ -135,7 +135,7 @@ When an employer adds a candidate through `POST /api/employer/candidates`, the s
 2. **Email Content**: 
    - Personalized greeting with candidate's name
    - Company and HR details
-   - Explanation of RedHunt platform benefits
+   - Explanation of Red-Flagged platform benefits
    - Direct registration link
    - Professional HTML template with branding
 

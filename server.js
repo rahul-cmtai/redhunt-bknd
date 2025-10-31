@@ -45,7 +45,7 @@ const DEFAULT_PORT = Number(process.env.PORT) || 3001;
 function listenWithRetry(port, attemptsLeft = 10) {
   return new Promise((resolve, reject) => {
     const server = app.listen(port, () => {
-      console.log(`RedHunt API listening on http://localhost:${port}`);
+      console.log(`Red-Flagged API listening on http://localhost:${port}`);
       console.log(`Server running on port ${port}`);
       resolve(server);
     });

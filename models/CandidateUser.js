@@ -111,7 +111,15 @@ const CandidateUserSchema = new mongoose.Schema(
         companyName: { type: String, default: null },
         employer: { type: mongoose.Schema.Types.ObjectId, ref: 'Employer', default: null },
         admin: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
-        notes: { type: String, default: null }
+        notes: { type: String, default: null },
+        // Candidate comments on this history entry
+        comments: [
+          {
+            text: { type: String, required: true, maxlength: 1000 },
+            createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'CandidateUser', required: true },
+            createdAt: { type: Date, default: Date.now }
+          }
+        ]
       }
     ]
   },
@@ -201,6 +209,46 @@ CandidateUserSchema.methods.resequenceUpdateHistory = function() {
     entry.points = idx + 1;
   });
   return this;
+};
+
+// Method: candidate adds a comment on a specific update history entry
+CandidateUserSchema.methods.addCommentOnUpdateHistory = function(entryId, { text, candidateId }) {
+  if (!entryId || !text || !candidateId) {
+    throw new Error('entryId, text and candidateId are required');
+  }
+
+  const entry = this.updateHistory && this.updateHistory.id(entryId);
+  if (!entry) {
+    throw new Error('Update history entry not found');
+  }
+
+  entry.comments = entry.comments || [];
+  entry.comments.push({ text, createdBy: candidateId });
+  return this.save();
+};
+
+// Method: candidate deletes their own comment from a specific update history entry
+CandidateUserSchema.methods.deleteCommentFromUpdateHistory = function(entryId, commentId, candidateId) {
+  if (!entryId || !commentId || !candidateId) {
+    throw new Error('entryId, commentId and candidateId are required');
+  }
+
+  const entry = this.updateHistory && this.updateHistory.id(entryId);
+  if (!entry) {
+    throw new Error('Update history entry not found');
+  }
+
+  const comment = entry.comments && entry.comments.id(commentId);
+  if (!comment) {
+    throw new Error('Comment not found');
+  }
+
+  if (!comment.createdBy || comment.createdBy.toString() !== candidateId.toString()) {
+    throw new Error('Not authorized to delete this comment');
+  }
+
+  comment.deleteOne();
+  return this.save();
 };
 
 // Static method to find verified users

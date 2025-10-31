@@ -450,6 +450,43 @@ export async function getCandidateUpdateHistory(req, res) {
   return res.json({ updateHistory: me.updateHistory || [] });
 }
 
+// Candidate adds a comment on a specific update history entry
+export async function addCandidateHistoryComment(req, res) {
+  const candidateId = req.user.id;
+  const { entryId } = req.params;
+  const { text } = req.body || {};
+  if (!text || String(text).trim() === '') {
+    return res.status(400).json({ message: 'text is required' });
+  }
+  const me = await CandidateUser.findById(candidateId);
+  if (!me) return res.status(404).json({ message: 'Not found' });
+  try {
+    await me.addCommentOnUpdateHistory(entryId, { text: String(text).trim(), candidateId });
+    const updatedEntry = (me.updateHistory || []).find((e) => String(e._id) === String(entryId));
+    return res.status(201).json({
+      success: true,
+      entryId,
+      comments: updatedEntry?.comments || []
+    });
+  } catch (e) {
+    return res.status(400).json({ message: e.message });
+  }
+}
+
+// Candidate deletes their own comment from a specific update history entry
+export async function deleteCandidateHistoryComment(req, res) {
+  const candidateId = req.user.id;
+  const { entryId, commentId } = req.params;
+  const me = await CandidateUser.findById(candidateId);
+  if (!me) return res.status(404).json({ message: 'Not found' });
+  try {
+    await me.deleteCommentFromUpdateHistory(entryId, commentId, candidateId);
+    return res.json({ deleted: true });
+  } catch (e) {
+    return res.status(400).json({ message: e.message });
+  }
+}
+
 export async function updateCandidateProfile(req, res) {
   const id = req.user.id;
   const allowed = ['phone', 'secondaryEmail', 'currentAddress'];

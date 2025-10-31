@@ -3,7 +3,7 @@ import CandidateUser from '../models/CandidateUser.js';
 import Employer from '../models/Employer.js';
 import AuditLog from '../models/AuditLog.js';
 import { computeTrustScore } from '../utils/scoring.js';
-import { sendCandidateInvitationEmail } from '../utils/mailer.js';
+import { sendCandidateInvitationEmail, sendCandidateWelcomeEmail } from '../utils/mailer.js';
 import mongoose from 'mongoose';
 
 // --- हेल्पर फ़ंक्शंस ---
@@ -141,24 +141,21 @@ export async function addCandidate(req, res) {
       verified: false
     });
     
-    // Send invitation email to candidate (if employer exists)
+    // Send welcome email to candidate (if employer exists)
     if (employer) {
       try {
-        // Generate registration URL (you can customize this based on your frontend URL)
-        const registrationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/candidate/register`;
-        
-        // Send invitation email to candidate
-        await sendCandidateInvitationEmail(
+        const siteUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}`;
+        await sendCandidateWelcomeEmail(
           email,
           name,
           employer.hrName || employer.companyName,
           employer.companyName,
-          registrationUrl
+          siteUrl
         );
         
-        console.log(`📧 Invitation email sent to candidate: ${email}`);
+        console.log(`📧 Welcome email sent to candidate: ${email}`);
       } catch (emailError) {
-        console.error('❌ Failed to send invitation email:', emailError.message);
+        console.error('❌ Failed to send welcome email:', emailError.message);
         // Don't fail the entire operation if email fails
         // You might want to log this to a separate error tracking system
       }
@@ -374,6 +371,18 @@ export async function listCandidates(req, res) {
   
   const candidates = await Candidate.find(query).sort({ createdAt: -1 });
   res.json(candidates);
+}
+
+// Employer: read a verified candidate user's update history (read-only, includes comments)
+export async function getCandidateUserUpdateHistoryByEmployer(req, res) {
+  const { id } = req.params;
+  // Only allow viewing approved candidate users
+  const user = await CandidateUser.findById(id).select('status updateHistory');
+  if (!user) return res.status(404).json({ message: 'Candidate user not found' });
+  if (user.status !== 'approved') {
+    return res.status(403).json({ message: 'Candidate not approved' });
+  }
+  return res.json({ updateHistory: user.updateHistory || [] });
 }
 
 export async function searchCandidates(req, res) {

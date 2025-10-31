@@ -1,7 +1,7 @@
 {
   "name": "redhunt-backend",
   "version": "1.0.0",
-  "description": "RedHunt B2B backend - Node.js, Express, MongoDB",
+  "description": "Red-Flagged B2B backend - Node.js, Express, MongoDB",
   "main": "server.js",
   "type": "module",
   "scripts": {
