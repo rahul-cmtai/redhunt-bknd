@@ -16,7 +16,7 @@ const app = express();
 
 app.use(
   cors({
-    origin: ["https://redhunt.vercel.app", "http://localhost:3000"],
+    origin: ["https://redhunt.vercel.app","https://redhunt.vercel.app/", "http://localhost:3000"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH","OPTIONS"],
     credentials: true,
