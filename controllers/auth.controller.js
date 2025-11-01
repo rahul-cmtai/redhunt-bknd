@@ -121,9 +121,7 @@ export async function employerRegister(req, res) {
 
 export async function employerLogin(req, res) {
   const { email, password } = req.body;
-  const employer = await Employer.findOne({ email: email.toLowerCase() })
-    .select('_id password passwordHash emailVerified status companyName hrName trustScore')
-    .lean();
+  const employer = await Employer.findOne({ email: email.toLowerCase() });
   if (!employer) return res.status(401).json({ message: 'Invalid credentials' });
   
   // Check password (handle both old passwordHash and new password field)
@@ -138,7 +136,7 @@ export async function employerLogin(req, res) {
     return res.status(403).json({ message: `Account ${employer.status}` });
   }
   
-  const token = signJwt({ id: employer._id.toString(), role: 'employer' });
+  const token = signJwt({ id: employer.id, role: 'employer' });
   res.json({ 
     token, 
     role: 'employer', 
@@ -162,13 +160,11 @@ export async function adminRegister(req, res) {
 
 export async function adminLogin(req, res) {
   const { email, password } = req.body;
-  const admin = await Admin.findOne({ email })
-    .select('_id passwordHash name')
-    .lean();
+  const admin = await Admin.findOne({ email });
   if (!admin) return res.status(401).json({ message: 'Invalid credentials' });
   const ok = await bcrypt.compare(password, admin.passwordHash);
   if (!ok) return res.status(401).json({ message: 'Invalid credentials' });
-  const token = signJwt({ id: admin._id.toString(), role: 'admin' });
+  const token = signJwt({ id: admin.id, role: 'admin' });
   res.json({ token, role: 'admin', name: admin.name });
 }
 
@@ -335,9 +331,7 @@ export async function candidateRegister(req, res) {
 
 export async function candidateLogin(req, res) {
   const { email, password } = req.body;
-  const candidate = await CandidateUser.findOne({ email })
-    .select('_id passwordHash emailVerified status fullName')
-    .lean();
+  const candidate = await CandidateUser.findOne({ email });
   if (!candidate) return res.status(401).json({ message: 'Invalid credentials' });
   const ok = await bcrypt.compare(password, candidate.passwordHash);
   if (!ok) return res.status(401).json({ message: 'Invalid credentials' });
@@ -347,7 +341,7 @@ export async function candidateLogin(req, res) {
   if (candidate.status !== 'approved') {
     return res.status(403).json({ message: `Account ${candidate.status}` });
   }
-  const token = signJwt({ id: candidate._id.toString(), role: 'candidate' });
+  const token = signJwt({ id: candidate.id, role: 'candidate' });
   res.json({ token, role: 'candidate', name: candidate.fullName });
 }
 
