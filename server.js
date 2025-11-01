@@ -25,11 +25,19 @@ app.use(helmet());
 //   ],
 //   credentials: true,
 // };
-const corsOptions = {
-  origin: "*",
-  credentials: true,
-};
-app.use(cors(corsOptions));
+// const corsOptions = {
+//   origin: "*",
+//   credentials: true,
+// };
+app.use(
+  cors({
+    origin: ["https://redhunt.vercel.app", "http://localhost:3000"],
+    credentials: true,
+  })
+);
+
+app.use("Welcome to Red-Flagged Backend");
+// app.use(cors(corsOptions));
 app.use(express.json());
 app.use(morgan('dev'));
 app.set('trust proxy', 1);
@@ -50,6 +58,8 @@ app.use('/api/candidate', candidateRoutes);
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
+
+
 
 const DEFAULT_PORT = Number(process.env.PORT) || 3001;
 
