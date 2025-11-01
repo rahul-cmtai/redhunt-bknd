@@ -17,12 +17,30 @@ dotenv.config();
 const app = express();
 
 // CORS configuration - must be before other middlewares
+// Support environment-specific origins (frontend URLs that make requests to this backend)
+const allowedOrigins = [
+  "https://redhunt.vercel.app",
+  "http://localhost:3000",
+  "http://localhost:3001",
+  ...(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : [])
+];
+
 const corsOptions = {
-  origin: ["https://redhunt.vercel.app", "http://localhost:3000"],
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV !== 'production') {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
   exposedHeaders: ["Content-Type", "Authorization"],
+  optionsSuccessStatus: 200, // Support legacy browsers
 };
 app.use(cors(corsOptions));
 
@@ -42,6 +60,15 @@ app.use(
     max: 300,
   })
 );
+
+// Root route - Welcome message
+app.get('/', (_req, res) => {
+  res.json({ 
+    message: 'Welcome to Red-Flagged Backend',
+    status: 'online',
+    version: '1.0.0'
+  });
+});
 
 // Routes
 app.use('/api/auth', authRoutes);
