@@ -1,34 +1,19 @@
 import express from 'express';
-import dotenv from 'dotenv';
-import mongoose from 'mongoose';
-import connectDB from './config/db.js';
-import morgan from 'morgan';
-import helmet from 'helmet';
 import cors from 'cors';
-import rateLimit from 'express-rate-limit';
+import dotenv from 'dotenv';
 import authRoutes from './routes/auth.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import employerRoutes from './routes/employer.routes.js';
 import reportRoutes from './routes/report.routes.js';
 import candidateRoutes from './routes/candidate.routes.js';
+import { connectDB } from './config/db.js';
 
 dotenv.config();
 
+await connectDB();
+
 const app = express();
 
-// Security middlewares
-app.use(helmet());
-// const corsOptions = {
-//   origin: [
-//     "http://localhost:3000",
-//     "https://redhunt.vercel.app",
-//   ],
-//   credentials: true,
-// };
-// const corsOptions = {
-//   origin: "*",
-//   credentials: true,
-// };
 app.use(
   cors({
     origin: ["https://redhunt.vercel.app", "http://localhost:3000"],
@@ -36,14 +21,6 @@ app.use(
   })
 );
 app.use(express.json());
-app.use(morgan('dev'));
-app.set('trust proxy', 1);
-app.use(
-  rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 300,
-  })
-);
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -68,38 +45,10 @@ app.get('/', (_req, res) => {
 
 const DEFAULT_PORT = Number(process.env.PORT) || 3001;
 
-function listenWithRetry(port, attemptsLeft = 10) {
-  return new Promise((resolve, reject) => {
-    const server = app.listen(port, () => {
-      console.log(`Red-Flagged API listening on http://localhost:${port}`);
-      console.log(`Server running on port ${port}`);
-      resolve(server);
-    });
 
-    server.on('error', (err) => {
-      if (err && err.code === 'EADDRINUSE' && attemptsLeft > 0) {
-        const nextPort = port + 1;
-        console.warn(
-          `Port ${port} in use; retrying on ${nextPort} (${attemptsLeft - 1} attempts left)`
-        );
-        setTimeout(() => {
-          listenWithRetry(nextPort, attemptsLeft - 1).then(resolve).catch(reject);
-        }, 250);
-      } else {
-        reject(err);
-      }
-    });
-  });
-}
-
-async function start() {
-  await connectDB();
-  await listenWithRetry(DEFAULT_PORT);
-}
-
-start().catch((err) => {
-  console.error('Failed to start server', err);
-  process.exit(1);
+app.listen(DEFAULT_PORT, () => {
+  console.log(`Red-Flagged API listening on http://localhost:${DEFAULT_PORT}`);
+  console.log(`Server running on port ${DEFAULT_PORT}`);
 });
 
 export default app;
