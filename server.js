@@ -9,50 +9,74 @@ import candidateRoutes from './routes/candidate.routes.js';
 import { connectDB } from './config/db.js';
 
 dotenv.config();
-
 await connectDB();
 
 const app = express();
 
+// ✅ CORS Configuration (Fix for Vercel Deployment)
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://redhunt.vercel.app',
+  'https://www.redhunt.vercel.app',
+];
+
 app.use(
   cors({
-    origin: ["https://redhunt.vercel.app","https://redhunt.vercel.app/", "http://localhost:3000"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH","OPTIONS"],
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps, curl)
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('CORS not allowed for this origin'));
+      }
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'Accept',
+      'Origin',
+    ],
     credentials: true,
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
   })
 );
+
+// ✅ Handle preflight requests explicitly (important for Vercel)
+app.options('*', cors());
+
+// ✅ Middleware
 app.use(express.json());
 
-// Routes
+// ✅ Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/employer', employerRoutes);
 app.use('/api', reportRoutes);
 app.use('/api/candidate', candidateRoutes);
 
+// ✅ Health check route
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok' });
+  res.json({ status: 'ok', env: process.env.NODE_ENV || 'development' });
 });
 
-
-// Root route - Welcome message
+// ✅ Root route
 app.get('/', (_req, res) => {
-  res.json({ 
+  res.json({
     message: 'Welcome to Red-Flagged Backend',
     status: 'online',
-    version: '1.0.0'
+    version: '1.0.0',
   });
 });
 
-const DEFAULT_PORT = Number(process.env.PORT) || 3001;
+// ✅ Default port
+const PORT = process.env.PORT || 3001;
 
-
-app.listen(DEFAULT_PORT, () => {
-  console.log(`Red-Flagged API listening on http://localhost:${DEFAULT_PORT}`);
-  console.log(`Server running on port ${DEFAULT_PORT}`);
+app.listen(PORT, () => {
+  console.log(`✅ Red-Flagged API running on port ${PORT}`);
+  console.log(`🌐 Allowed origins:`, allowedOrigins);
 });
 
 export default app;
-
-
