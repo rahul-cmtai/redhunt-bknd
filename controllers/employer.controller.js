@@ -6,9 +6,7 @@ import { computeTrustScore } from '../utils/scoring.js';
 import { sendCandidateInvitationEmail, sendCandidateWelcomeEmail } from '../utils/mailer.js';
 import mongoose from 'mongoose';
 
-// --- हेल्पर फ़ंक्शंस ---
 
-// यह joiningStatus की गणना करता है (यह सही था)
 function normalizeOfferToJoiningStatus(offerStatus) {
   const s = (offerStatus || '').toLowerCase();
   if (s === 'joined') return 'joined';
@@ -16,17 +14,24 @@ function normalizeOfferToJoiningStatus(offerStatus) {
   return 'pending';
 }
 
-// *** नया हेल्पर फ़ंक्शन: यह offerStatus को साफ़ और मान्य करता है ***
 const VALID_OFFER_STATUSES = ['Offered', 'Accepted', 'Rejected', 'Joined', 'Not Joined', ''];
 function sanitizeOfferStatus(status) {
-  if (!status) return ''; // null, undefined, या खाली स्ट्रिंग को हैंडल करें
-  // केस-असंवेदनशील मिलान करके सही केस वाली वैल्यू ढूंढें
+  if (!status) return ''; 
+
   const foundStatus = VALID_OFFER_STATUSES.find(valid => valid.toLowerCase() === status.trim().toLowerCase());
-  return foundStatus !== undefined ? foundStatus : ''; // अगर मान्य है तो उसे लौटाएं, वरना खाली स्ट्र`''`
+  return foundStatus !== undefined ? foundStatus : ''; 
+}
+
+// Helper function to normalize mobile numbers for comparison
+// Removes spaces, dashes, parentheses, and plus signs, keeping only digits
+function normalizeMobileNumber(mobile) {
+  if (!mobile) return '';
+  // Remove all non-digit characters
+  return mobile.replace(/\D/g, '');
 }
 
 
-// --- API नियंत्रक ---
+// --- API  ---
 
 export async function addCandidate(req, res) {
   const employerId = req.user.id;
@@ -114,6 +119,22 @@ export async function addCandidate(req, res) {
         message: 'Candidate with this PAN already exists',
         conflict: 'panNumber'
       });
+    }
+  }
+  
+  // Check for existing candidate with same mobile number for this employer
+  const normalizedMobile = normalizeMobileNumber(mobile);
+  if (normalizedMobile) {
+    // Get all candidates by this employer and check normalized mobile numbers
+    const employerCandidates = await Candidate.find({ employer: employerId }).select('mobile');
+    for (const existingCandidate of employerCandidates) {
+      const existingNormalizedMobile = normalizeMobileNumber(existingCandidate.mobile);
+      if (existingNormalizedMobile === normalizedMobile) {
+        return res.status(409).json({ 
+          message: 'Candidate with this mobile number already exists for your company',
+          conflict: 'mobile'
+        });
+      }
     }
   }
   
@@ -259,7 +280,23 @@ export async function listAllCandidates(req, res) {
     }
     
     // Get candidate users (verified candidates)
-    const candidateUserQuery = { status: 'approved' };
+    // Show ALL approved candidate users, but mark which ones can be updated
+    // First, get emails, UANs, names, and mobile numbers of candidates invited by this employer for matching
+    const employerCandidates = await Candidate.find({ employer: employerId }).select('email uan name mobile');
+    const employerEmails = employerCandidates.map(c => c.email?.toLowerCase()).filter(Boolean);
+    const employerUans = employerCandidates.map(c => c.uan).filter(Boolean);
+    const employerNames = employerCandidates.map(c => c.name?.trim().toLowerCase()).filter(Boolean);
+    // Normalize mobile numbers for comparison
+    const employerMobiles = employerCandidates
+      .map(c => normalizeMobileNumber(c.mobile))
+      .filter(Boolean);
+    
+    // Build query for ALL approved CandidateUsers (not restricted to employer's invited ones)
+    const candidateUserQuery = { 
+      status: 'approved'
+    };
+    
+    // Add search conditions if provided
     if (searchRegex) {
       candidateUserQuery.$or = [
         { email: searchRegex },
@@ -278,11 +315,40 @@ export async function listAllCandidates(req, res) {
         CandidateUser.find(candidateUserQuery).sort({ createdAt: -1 })
       ]);
     } else if (type === 'invited') {
-      // Only invited candidates
+      // Only invited candidates - but we still need to check verified ones to filter duplicates
       candidates = await Candidate.find(candidateQuery).sort({ createdAt: -1 });
+      // Also fetch verified candidates to check for matches
+      candidateUsers = await CandidateUser.find(candidateUserQuery).sort({ createdAt: -1 });
     } else if (type === 'verified') {
       // Only verified candidate users
       candidateUsers = await CandidateUser.find(candidateUserQuery).sort({ createdAt: -1 });
+    }
+    
+    // *** FILTER OUT INVITED CANDIDATES THAT HAVE REGISTERED/VEREIFIED ***
+    // If a candidate has registered (become a CandidateUser), remove them from invited list
+    // Match by email and mobile number
+    if (candidateUsers && candidateUsers.length > 0) {
+      // Get all verified candidate user emails and mobile numbers (normalized)
+      const verifiedEmails = candidateUsers.map(cu => 
+        (cu.email || cu.primaryEmail || '').toLowerCase()
+      ).filter(Boolean);
+      
+      const verifiedMobiles = candidateUsers.map(cu => 
+        normalizeMobileNumber(cu.mobileNumber || cu.phone)
+      ).filter(Boolean);
+      
+      // Filter out invited candidates that match verified candidates by email or mobile
+      candidates = candidates.filter(invitedCandidate => {
+        const invitedEmail = (invitedCandidate.email || '').toLowerCase();
+        const invitedMobile = normalizeMobileNumber(invitedCandidate.mobile);
+        
+        // Check if this invited candidate has registered (matches a verified candidate user)
+        const emailMatch = verifiedEmails.length > 0 && invitedEmail && verifiedEmails.includes(invitedEmail);
+        const mobileMatch = verifiedMobiles.length > 0 && invitedMobile && verifiedMobiles.includes(invitedMobile);
+        
+        // If matches by email OR mobile, exclude from invited list (they're now verified)
+        return !(emailMatch || mobileMatch);
+      });
     }
     
     // Format response
@@ -303,36 +369,64 @@ export async function listAllCandidates(req, res) {
       updatedAt: candidate.updatedAt
     }));
     
-    const formattedCandidateUsers = candidateUsers.map(candidate => ({
-      id: candidate._id,
-      type: 'verified',
-      name: candidate.fullName,
-      email: candidate.email,
-      primaryEmail: candidate.primaryEmail,
-      mobile: candidate.mobileNumber,
-      uan: candidate.uan,
-      pan: candidate.pan,
-      fathersName: candidate.fathersName,
-      gender: candidate.gender,
-      dob: candidate.dob,
-      highestQualification: candidate.highestQualification,
-      workExperience: candidate.workExperience,
-      sector: candidate.sector,
-      presentCompany: candidate.presentCompany,
-      designation: candidate.designation,
-      workLocation: candidate.workLocation,
-      openToRelocation: candidate.openToRelocation,
-      currentCtc: candidate.currentCtc,
-      expectedHikePercentage: candidate.expectedHikePercentage,
-      noticePeriod: candidate.noticePeriod,
-      negotiableDays: candidate.negotiableDays,
-      skillSets: candidate.skillSets,
-      profileCompleteness: candidate.profileCompleteness,
-      verifiedBy: candidate.verifiedBy,
-      verifiedAt: candidate.verifiedAt,
-      createdAt: candidate.createdAt,
-      updatedAt: candidate.updatedAt
-    }));
+    // Format candidate users and check if they can be updated by this employer
+    const formattedCandidateUsers = candidateUsers.map(candidate => {
+      // Check if this candidate was invited by this employer
+      const candidateEmail = (candidate.email || candidate.primaryEmail || '').toLowerCase();
+      const candidateName = (candidate.fullName || '').trim().toLowerCase();
+      const candidateUan = candidate.uan;
+      const candidateMobile = candidate.mobileNumber || candidate.phone;
+      const normalizedCandidateMobile = normalizeMobileNumber(candidateMobile);
+      
+      // Check if candidate was created by this employer
+      const wasCreatedByThisEmployer = candidate.createdBy && 
+        candidate.createdBy.toString() === employerId.toString();
+      
+      // Check if email/UAN/name/mobile matches any invited candidate
+      const emailMatches = employerEmails.length > 0 && employerEmails.includes(candidateEmail);
+      const uanMatches = employerUans.length > 0 && candidateUan && employerUans.includes(candidateUan);
+      const nameMatches = employerNames.length > 0 && candidateName && 
+        employerNames.some(name => candidateName.includes(name) || name.includes(candidateName));
+      // Mobile number matching (normalized comparison)
+      const mobileMatches = employerMobiles.length > 0 && normalizedCandidateMobile && 
+        employerMobiles.includes(normalizedCandidateMobile);
+      
+      const wasInvitedByThisEmployer = emailMatches || uanMatches || nameMatches || mobileMatches;
+      const canUpdate = wasCreatedByThisEmployer || wasInvitedByThisEmployer;
+      
+      return {
+        id: candidate._id,
+        type: 'verified',
+        name: candidate.fullName,
+        email: candidate.email,
+        primaryEmail: candidate.primaryEmail,
+        mobile: candidate.mobileNumber,
+        uan: candidate.uan,
+        pan: candidate.pan,
+        fathersName: candidate.fathersName,
+        gender: candidate.gender,
+        dob: candidate.dob,
+        highestQualification: candidate.highestQualification,
+        workExperience: candidate.workExperience,
+        sector: candidate.sector,
+        presentCompany: candidate.presentCompany,
+        designation: candidate.designation,
+        workLocation: candidate.workLocation,
+        openToRelocation: candidate.openToRelocation,
+        currentCtc: candidate.currentCtc,
+        expectedHikePercentage: candidate.expectedHikePercentage,
+        noticePeriod: candidate.noticePeriod,
+        negotiableDays: candidate.negotiableDays,
+        skillSets: candidate.skillSets,
+        profileCompleteness: candidate.profileCompleteness,
+        verifiedBy: candidate.verifiedBy,
+        verifiedAt: candidate.verifiedAt,
+        createdAt: candidate.createdAt,
+        updatedAt: candidate.updatedAt,
+        canUpdate: canUpdate, // Flag indicating if employer can update this candidate
+        wasInvitedByThisEmployer: wasInvitedByThisEmployer
+      };
+    });
     
     // Combine and sort by creation date
     const allCandidates = [...formattedCandidates, ...formattedCandidateUsers]
@@ -562,12 +656,78 @@ export async function updateCandidateUserByEmployer(req, res) {
     Employer.findById(employerId).select('companyName hrName')
   ]);
   if (!candidateUser) return res.status(404).json({ message: 'Candidate user not found' });
+  
+  // *** VALIDATION: Check if this candidate was originally invited by this employer ***
+  // Only allow updates/remarks if the candidate was invited by this employer
+  
+  // Check if candidate user was created by this employer
+  const wasCreatedByThisEmployer = candidateUser.createdBy && 
+    candidateUser.createdBy.toString() === employerId.toString();
+  
+  // Check if there's a Candidate record (invited candidate) with matching email/name/UAN/mobile created by this employer
+  const candidateEmail = candidateUser.email || candidateUser.primaryEmail;
+  const candidateName = candidateUser.fullName || candidateUser.name;
+  const candidateUan = candidateUser.uan;
+  const candidateMobile = candidateUser.mobileNumber || candidateUser.phone;
+  
+  // Normalize mobile numbers for comparison
+  const normalizedCandidateMobile = normalizeMobileNumber(candidateMobile);
+  
+  // Build query to find matching invited candidate
+  const matchConditions = { employer: employerId };
+  const orConditions = [];
+  
+  if (candidateEmail) {
+    orConditions.push({ email: candidateEmail.toLowerCase() });
+  }
+  if (candidateUan) {
+    orConditions.push({ uan: candidateUan });
+  }
+  if (candidateName) {
+    orConditions.push({ name: { $regex: new RegExp(candidateName.trim(), 'i') } });
+  }
+  
+  // Mobile number matching - fetch all candidates by this employer and check mobile numbers
+  let wasInvitedByThisEmployer = false;
+  if (normalizedCandidateMobile) {
+    // Fetch all candidates invited by this employer
+    const employerCandidates = await Candidate.find({ employer: employerId }).select('mobile email name uan');
+    
+    // Check if any invited candidate's mobile number matches
+    for (const invitedCandidate of employerCandidates) {
+      const normalizedInvitedMobile = normalizeMobileNumber(invitedCandidate.mobile);
+      if (normalizedInvitedMobile && normalizedInvitedMobile === normalizedCandidateMobile) {
+        wasInvitedByThisEmployer = true;
+        break;
+      }
+    }
+  }
+  
+  // If mobile didn't match, check other fields (email, UAN, name)
+  if (!wasInvitedByThisEmployer) {
+    if (orConditions.length > 0) {
+      matchConditions.$or = orConditions;
+      const invitedCandidate = await Candidate.findOne(matchConditions);
+      wasInvitedByThisEmployer = !!invitedCandidate;
+    }
+  }
+  
+  // Allow update/remarks only if:
+  // 1. Candidate was created by this employer, OR
+  // 2. There's a matching invited candidate record created by this employer
+  if (!wasCreatedByThisEmployer && !wasInvitedByThisEmployer) {
+    return res.status(403).json({ 
+      message: 'आप केवल उन candidates को remarks दे सकते हैं जिन्हें आपने originally invite किया था। यह candidate आपके company द्वारा invite नहीं किया गया था।',
+      canUpdate: false,
+      error: 'NOT_INVITED_BY_EMPLOYER'
+    });
+  }
 
   // Apply updates
   Object.assign(candidateUser, updates);
   await candidateUser.save();
 
-  // Append update history on candidate user
+  // Append update history on candidate user (remarks)
   try {
     await candidateUser.appendUpdateHistory({
       role: 'employer',

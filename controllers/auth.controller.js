@@ -3,7 +3,7 @@ import Employer from '../models/Employer.js';
 import Admin from '../models/Admin.js';
 import { signJwt } from '../utils/jwt.js';
 import CandidateUser from '../models/CandidateUser.js';
-import { generateOtp, sendOtpEmail } from '../utils/mailer.js';
+import { generateOtp, sendOtpEmail, sendEmployerWelcomeEmail } from '../utils/mailer.js';
 
 export async function employerRegister(req, res) {
   const { 
@@ -98,11 +98,32 @@ export async function employerRegister(req, res) {
       emailVerified: false
     });
     
-    try {
-      await sendOtpEmail(email, otp, 'employer');
-    } catch (_e) {
-      // ignore mail failure; user can request resend
-    }
+    // Send both emails in parallel (OTP and Welcome)
+    const siteUrl = process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_FRONTEND_URL || 'http://localhost:3000';
+    
+    console.log(`📧 Preparing to send emails to employer: ${email}`);
+    
+    // Send both emails independently using Promise.allSettled
+    const emailPromises = [
+      sendOtpEmail(email, otp, 'employer').then(() => {
+        console.log(`✅ OTP email sent to employer: ${email}`);
+      }).catch((otpError) => {
+        console.error('❌ Failed to send OTP email:', otpError?.message || otpError);
+        // Continue even if OTP email fails; user can request resend
+      }),
+      
+      sendEmployerWelcomeEmail(email, hrName, companyName, siteUrl).then(() => {
+        console.log(`✅ Welcome email sent successfully to employer: ${email}`);
+      }).catch((welcomeError) => {
+        console.error('❌ Failed to send welcome email:', welcomeError?.message || welcomeError);
+        console.error('❌ Welcome email error details:', welcomeError);
+        // Don't fail registration if welcome email fails, but log it
+      })
+    ];
+    
+    // Wait for both emails to complete (or fail)
+    await Promise.allSettled(emailPromises);
+    console.log(`📬 Email sending process completed for employer: ${email}`);
     
     return res.status(201).json({ 
       id: employer.id, 
