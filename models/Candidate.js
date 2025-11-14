@@ -131,12 +131,14 @@ const CandidateSchema = new mongoose.Schema(
 // Indexes
 CandidateSchema.index({ employer: 1, email: 1 }, { unique: true });
 CandidateSchema.index({ email: 1 }, { unique: true });
+CandidateSchema.index({ employer: 1, mobile: 1 }, { unique: true }); // Mobile unique per employer
 CandidateSchema.index({ uan: 1 }, { unique: true, sparse: true });
 CandidateSchema.index({ panNumber: 1 }, { unique: true, sparse: true });
 CandidateSchema.index({ employer: 1 });
 CandidateSchema.index({ offerStatus: 1 });
 CandidateSchema.index({ createdAt: -1 });
 CandidateSchema.index({ name: 1 });
+CandidateSchema.index({ mobile: 1 }); // Index for faster mobile lookups
 
 // Virtual for formatted mobile number
 CandidateSchema.virtual('formattedMobile').get(function() {

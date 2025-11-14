@@ -81,15 +81,22 @@ export async function approveCandidateUser(req, res) {
   
   // Use the model method for verification
   await user.verifyUser(adminId, notes);
-  // Append update history
+  // Append update history ONLY if there are actual notes or meaningful content
+  // Don't create history entry for just approval without notes
   try {
-    const admin = await Admin.findById(adminId).select('name');
-    await user.appendUpdateHistory({
-      role: 'admin',
-      name: admin?.name || 'Admin',
-      adminId: adminId,
-      notes: notes || 'approved'
-    });
+    // Only create update history if:
+    // 1. Admin provided actual notes (not just empty/default)
+    // 2. OR there are verification notes
+    if (notes && notes.trim() && notes.trim().toLowerCase() !== 'approved') {
+      const admin = await Admin.findById(adminId).select('name');
+      await user.appendUpdateHistory({
+        role: 'admin',
+        name: admin?.name || 'Admin',
+        adminId: adminId,
+        notes: notes.trim()
+      });
+    }
+    // If notes is just "approved" or empty, don't create history entry
   } catch (_) {}
   
   res.json({ 
@@ -225,15 +232,24 @@ export async function updateCandidateUserStatus(req, res) {
   }
   
   await user.save();
-  // Append update history
+  // Append update history ONLY if there are actual notes or meaningful content
+  // Don't create history entry for just status change without notes
   try {
-    const admin = await Admin.findById(adminId).select('name');
-    await user.appendUpdateHistory({
-      role: 'admin',
-      name: admin?.name || 'Admin',
-      adminId: adminId,
-      notes: notes || `status: ${status}`
-    });
+    // Only create update history if:
+    // 1. Admin provided actual notes (not just empty/default)
+    // 2. OR status change is not just "approved" without context
+    const hasActualNotes = notes && notes.trim() && notes.trim().toLowerCase() !== 'approved' && notes.trim().toLowerCase() !== `status: ${status}`.toLowerCase();
+    
+    if (hasActualNotes) {
+      const admin = await Admin.findById(adminId).select('name');
+      await user.appendUpdateHistory({
+        role: 'admin',
+        name: admin?.name || 'Admin',
+        adminId: adminId,
+        notes: notes.trim()
+      });
+    }
+    // If notes is just "approved" or "status: approved", don't create history entry
   } catch (_) {}
   
   res.json({ 
