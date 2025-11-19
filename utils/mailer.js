@@ -9,37 +9,16 @@ const from = 'rahul.kumar@completrix.com';
 
 let transporter;
 
-function maskSecret(value) {
-  if (!value) return '(missing)';
-  const visibleTail = String(value).slice(-2);
-  return `${'*'.repeat(Math.max(4, String(value).length - 2))}${visibleTail}`;
-}
-
-function logSmtpEnv() {
-  console.log('🔧 SMTP ENV', {
-    SMTP_HOST: host || '(missing)',
-    SMTP_PORT: port,
-    SMTP_USER: user || '(missing)',
-    SMTP_PASS: maskSecret(pass),
-    MAIL_FROM: from || '(missing)'
-  });
-}
-
 export function getTransporter() {
   if (transporter) return transporter;
-  // Ensure we log what env values are visible to this module
-  logSmtpEnv();
-  
+
   // Check if SMTP is configured
   if (!host || !user || !pass || user === 'your-email@gmail.com' || pass === 'your-app-password') {
     console.warn('⚠️ SMTP not configured. Please update the credentials in mailer.js file.');
     // Return a dummy transporter for development
     return {
       sendMail: async (mailOptions) => {
-        console.log('📧 [DEV MODE] Email would be sent:');
-        console.log(`   To: ${mailOptions.to}`);
-        console.log(`   Subject: ${mailOptions.subject}`);
-        console.log(`   OTP: ${mailOptions.html.match(/(\d{6})/)?.[0] || 'N/A'}`);
+        console.warn('📧 [DEV MODE] Email send skipped (transporter not configured).');
         return { messageId: 'dev-mode-no-email' };
       }
     };
@@ -50,11 +29,8 @@ export function getTransporter() {
     secure: port === 465,
     auth: { user, pass },
   });
-  // Proactively verify SMTP connectivity/auth; log outcome without throwing
-  transporter
-    .verify()
-    .then(() => console.log('✅ SMTP connection verified'))
-    .catch((err) => console.error('❌ SMTP verify failed:', err?.message || err));
+  // Proactively verify SMTP connectivity/auth; log only on failure
+  transporter.verify().catch((err) => console.error('❌ SMTP verify failed:', err?.message || err));
   return transporter;
 }
 
@@ -109,11 +85,8 @@ export async function sendOtpEmail(to, otp, role = 'user') {
       </table>
     </div>
   `;
-  console.log('📨 Preparing OTP email:', { to, role, otp, from, subject });
   try {
     const info = await transport.sendMail({ from, to, subject, html });
-    console.log('📧 Email sent. messageId:', info?.messageId);
-    if (info?.response) console.log('SMTP response:', info.response);
     return info;
   } catch (err) {
     console.error('❌ Failed to send OTP email:', err?.response || err?.message || err);
@@ -202,11 +175,8 @@ export async function sendCandidateInvitationEmail(to, candidateName, employerNa
     </div>
   `;
   
-  console.log('📨 Preparing candidate invitation email:', { to, candidateName, employerName, companyName });
   try {
     const info = await transport.sendMail({ from, to, subject, html });
-    console.log('📧 Candidate invitation email sent. messageId:', info?.messageId);
-    if (info?.response) console.log('SMTP response:', info.response);
     return info;
   } catch (err) {
     console.error('❌ Failed to send candidate invitation email:', err?.response || err?.message || err);
@@ -278,11 +248,8 @@ export async function sendCandidateWelcomeEmail(to, candidateName, employerName,
     </div>
   `;
 
-  console.log('📨 Preparing candidate welcome email:', { to, candidateName, employerName, companyName });
   try {
     const info = await transport.sendMail({ from, to, subject, html });
-    console.log('📧 Candidate welcome email sent. messageId:', info?.messageId);
-    if (info?.response) console.log('SMTP response:', info.response);
     return info;
   } catch (err) {
     console.error('❌ Failed to send candidate welcome email:', err?.response || err?.message || err);
@@ -290,9 +257,89 @@ export async function sendCandidateWelcomeEmail(to, candidateName, employerName,
   }
 }
 
-export async function sendEmployerWelcomeEmail(to, hrName, companyName, siteUrl) {
+export async function sendContactFormConfirmationEmail(to, name) {
   const transport = getTransporter();
-  const subject = `🎉 Welcome to Red-Flagged, ${companyName}!`;
+  const subject = 'Thank You for Contacting Red-Flagged - We\'ll Connect Soon!';
+  const html = `
+    <div style="margin:0;padding:0;background:#f6f7fb;font-family:Arial,Helvetica,sans-serif;color:#2d3436;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f7fb;padding:24px 0;">
+        <tr>
+          <td align="center">
+            <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,0.08);overflow:hidden;">
+              <tr>
+                <td style="background:#8e0000;background:linear-gradient(135deg,#b71c1c 0%, #8e0000 100%);padding:20px 24px;color:#ffffff;">
+                  <table width="100%" cellpadding="0" cellspacing="0">
+                    <tr>
+                      <td style="font-size:22px;font-weight:700;letter-spacing:0.3px;">Red-Flagged</td>
+                      <td align="right" style="font-size:12px;opacity:0.9;">Trust & Verification Platform</td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:28px 28px 8px 28px;">
+                  <h2 style="margin:0 0 12px 0;color:#1e272e;font-size:20px;">Thank You for Reaching Out, ${name || 'Valued Customer'}! 👋</h2>
+                  <p style="margin:0 0 16px 0;font-size:14px;color:#4a4a4a;">Hello ${name || 'there'},</p>
+                  <p style="margin:0 0 16px 0;font-size:14px;color:#4a4a4a;line-height:1.6;">
+                    We've received your message and we're excited to connect with you! Our team is already reviewing your inquiry and will get back to you soon.
+                  </p>
+                  
+                  <!-- Confirmation Box -->
+                  <div style="background:linear-gradient(135deg, #fff5f5 0%, #ffe0e0 100%);border:2px solid #ffcdd2;border-radius:10px;padding:20px;margin:22px 0;">
+                    <div style="text-align:center;">
+                      <div style="font-size:48px;margin-bottom:10px;">✅</div>
+                      <h3 style="margin:0 0 10px 0;color:#b71c1c;font-size:18px;font-weight:700;">We Will Connect You Soon!</h3>
+                      <p style="margin:0;color:#4a4a4a;font-size:14px;line-height:1.6;">
+                        Our team typically responds within <strong style="color:#b71c1c;">12-24 hours</strong> during business days. We'll make sure to address all your questions and provide you with the information you need.
+                      </p>
+                    </div>
+                  </div>
+
+                  <!-- What Happens Next -->
+                  <div style="background:#f8f9fa;border-radius:10px;padding:20px;margin:20px 0;">
+                    <h3 style="margin:0 0 15px 0;color:#1e272e;font-size:16px;font-weight:700;">What Happens Next?</h3>
+                    <ul style="margin:0;padding-left:20px;color:#4a4a4a;font-size:14px;line-height:1.8;">
+                      <li style="margin-bottom:8px;">Our team will review your inquiry</li>
+                      <li style="margin-bottom:8px;">We'll prepare a personalized response</li>
+                      <li style="margin-bottom:8px;">You'll receive an email from one of our specialists</li>
+                      <li>We'll help you with demos, pricing, or any other questions</li>
+                    </ul>
+                  </div>
+
+                  <p style="margin:20px 0 10px 0;font-size:12px;color:#6b6b6b;text-align:center;">
+                    We appreciate your interest in Red-Flagged and look forward to helping you!
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:14px 28px 24px 28px;border-top:1px solid #f0f0f0;background:#fafafa;">
+                  <table width="100%" cellpadding="0" cellspacing="0">
+                    <tr>
+                      <td style="font-size:12px;color:#8b8b8b;">© ${new Date().getFullYear()} Red-Flagged</td>
+                      <td align="right" style="font-size:12px;color:#8b8b8b;">This is an automated confirmation email.</td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </div>
+  `;
+  
+  try {
+    const info = await transport.sendMail({ from, to, subject, html });
+    return info;
+  } catch (err) {
+    console.error('❌ Failed to send contact form confirmation email:', err?.response || err?.message || err);
+    throw err;
+  }
+}
+
+export async function sendCandidateWelcomeEmailOnApproval(to, candidateName, siteUrl) {
+  const transport = getTransporter();
+  const subject = `Welcome to Red-flagged.com – Your Bridge to Transparent Hiring`;
   const html = `
     <!DOCTYPE html>
     <html>
@@ -300,278 +347,223 @@ export async function sendEmployerWelcomeEmail(to, hrName, companyName, siteUrl)
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
     </head>
-    <body style="margin:0;padding:0;background:linear-gradient(135deg, #667eea 0%, #764ba2 25%, #f093fb 50%, #f5576c 75%, #4facfe 100%);background-size:400% 400%;animation:gradient 15s ease infinite;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
-      <style>
-        @keyframes gradient {
-          0% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-          100% { background-position: 0% 50%; }
-        }
-      </style>
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:50px 20px;">
+    <body style="margin:0;padding:0;background:#f6f7fb;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f7fb;padding:40px 20px;">
         <tr>
           <td align="center">
-            <table role="presentation" width="680" cellpadding="0" cellspacing="0" style="max-width:680px;background:#ffffff;border-radius:24px;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden;border:3px solid rgba(183,28,28,0.2);">
+            <table role="presentation" width="680" cellpadding="0" cellspacing="0" style="max-width:680px;background:#ffffff;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.1);overflow:hidden;">
               
-              <!-- Premium Hero Header -->
+              <!-- Hero Header -->
               <tr>
-                <td style="background:linear-gradient(135deg, #b71c1c 0%, #8e0000 30%, #c62828 60%, #d32f2f 100%);padding:60px 40px;text-align:center;position:relative;overflow:hidden;">
-                  <!-- Animated Background Elements -->
-                  <div style="position:absolute;top:-80px;right:-80px;width:300px;height:300px;background:rgba(255,255,255,0.15);border-radius:50%;animation:float 6s ease-in-out infinite;"></div>
-                  <div style="position:absolute;bottom:-60px;left:-60px;width:250px;height:250px;background:rgba(255,255,255,0.12);border-radius:50%;animation:float 8s ease-in-out infinite;"></div>
-                  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:400px;height:400px;background:rgba(255,255,255,0.05);border-radius:50%;"></div>
-                  
-                  <div style="position:relative;z-index:10;">
-                    <!-- Red-Flagged Logo/Brand -->
-                    <div style="margin-bottom:25px;">
-                      <div style="display:inline-block;background:rgba(255,255,255,0.2);backdrop-filter:blur(10px);padding:15px 30px;border-radius:50px;border:2px solid rgba(255,255,255,0.3);">
-                        <h1 style="margin:0;color:#ffffff;font-size:48px;font-weight:900;letter-spacing:2px;text-shadow:0 4px 15px rgba(0,0,0,0.3);font-family:'Arial Black',Arial,sans-serif;">
-                          🚩 Red-Flagged
-                        </h1>
-                      </div>
-                    </div>
-                    
-                    <div style="margin-bottom:20px;">
-                      <h2 style="margin:0 0 10px 0;color:#ffffff;font-size:36px;font-weight:800;letter-spacing:1px;text-shadow:0 3px 12px rgba(0,0,0,0.25);">
-                        🎉 Welcome Aboard!
-                      </h2>
-                      <p style="margin:0;color:#ffebee;font-size:18px;font-weight:600;letter-spacing:0.8px;text-shadow:0 2px 8px rgba(0,0,0,0.2);">
-                        Trust & Verification Platform
-                      </p>
-                    </div>
-                    
-                    <!-- Decorative Line -->
-                    <div style="width:100px;height:4px;background:rgba(255,255,255,0.6);margin:20px auto;border-radius:2px;"></div>
-                  </div>
+                <td style="background:linear-gradient(135deg, #b71c1c 0%, #8e0000 100%);padding:50px 40px;text-align:center;">
+                  <h1 style="margin:0 0 10px 0;color:#ffffff;font-size:36px;font-weight:800;letter-spacing:1px;">
+                    🚩 Red-flagged.com
+                  </h1>
+                  <p style="margin:0;color:#ffebee;font-size:16px;font-weight:500;">
+                    Your Bridge to Transparent Hiring
+                  </p>
                 </td>
               </tr>
 
-              <!-- Main Content Section -->
+              <!-- Main Content -->
               <tr>
-                <td style="padding:55px 45px;background:#ffffff;">
-                  <!-- Personalized Greeting -->
-                  <div style="text-align:center;margin-bottom:35px;">
-                    <h2 style="margin:0 0 15px 0;color:#1a1a1a;font-size:32px;font-weight:800;line-height:1.2;">
-                      Hello ${hrName || 'Valued Employer'}! 👋
+                <td style="padding:45px 40px;background:#ffffff;">
+                  <!-- Greeting -->
+                  <div style="margin-bottom:30px;">
+                    <h2 style="margin:0 0 15px 0;color:#1a1a1a;font-size:28px;font-weight:700;line-height:1.3;">
+                      Dear ${candidateName || 'Candidate'},
                     </h2>
-                    <div style="display:inline-block;background:linear-gradient(135deg, #fff5f5 0%, #ffe0e0 100%);padding:12px 25px;border-radius:30px;border:2px solid #ffcdd2;">
-                      <p style="margin:0;color:#b71c1c;font-size:16px;font-weight:700;">
-                        ${companyName}
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <!-- Welcome Message -->
-                  <div style="background:linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);border-radius:16px;padding:30px;margin-bottom:30px;border-left:6px solid #b71c1c;box-shadow:0 4px 15px rgba(0,0,0,0.08);">
-                    <p style="margin:0 0 18px 0;color:#2d3436;font-size:18px;line-height:1.8;text-align:center;">
-                      We're absolutely <strong style="color:#b71c1c;font-size:20px;">thrilled</strong> to welcome <strong style="color:#b71c1c;font-size:20px;">${companyName}</strong> to the <strong style="color:#b71c1c;font-size:20px;">Red-Flagged</strong> family! 🚀
-                    </p>
-                    <p style="margin:0;color:#495057;font-size:16px;line-height:1.8;text-align:center;">
-                      Your registration with <strong style="color:#b71c1c;">Red-Flagged</strong> has been successfully completed. You're now part of India's most trusted network revolutionizing how companies verify and track candidate information.
+                    <p style="margin:0;color:#2d3436;font-size:16px;line-height:1.8;">
+                      Welcome to <strong style="color:#b71c1c;">Red-flagged.com</strong>, the first‑of‑its‑kind platform that connects employers and candidates through open dialogue. We're thrilled you've joined a community that values honesty and mutual respect, helping you turn a single "no‑show" into an opportunity to explain and rebuild trust.
                     </p>
                   </div>
 
-                  <!-- Red-Flagged Features Box -->
-                  <div style="background:linear-gradient(135deg, #fff5f5 0%, #ffe0e0 100%);border:3px solid #b71c1c;border-radius:18px;padding:35px;margin:35px 0;box-shadow:0 8px 25px rgba(183,28,28,0.15);">
-                    <div style="text-align:center;margin-bottom:25px;">
-                      <h3 style="margin:0;color:#b71c1c;font-size:26px;font-weight:800;letter-spacing:0.5px;">
-                        ✨ What You Can Do with Red-Flagged:
-                      </h3>
-                      <p style="margin:8px 0 0 0;color:#8e0000;font-size:14px;font-weight:600;">
-                        Empowering Your Hiring Process
-                      </p>
-                    </div>
-                    
-                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
-                      <tr>
-                        <td style="padding:18px 0;border-bottom:1px solid rgba(183,28,28,0.1);">
-                          <table width="100%" cellpadding="0" cellspacing="0">
-                            <tr>
-                              <td width="50" valign="top">
-                                <div style="width:40px;height:40px;background:linear-gradient(135deg, #b71c1c 0%, #8e0000 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(183,28,28,0.3);">
-                                  <span style="color:#ffffff;font-size:20px;font-weight:bold;">1</span>
-                                </div>
-                              </td>
-                              <td valign="top" style="padding-left:15px;">
-                                <p style="margin:0;color:#1a1a1a;font-size:17px;line-height:1.6;">
-                                  <strong style="color:#b71c1c;font-size:18px;">Invite Candidates:</strong> Add candidates to your <strong>Red-Flagged</strong> dashboard and track their status in real-time
-                                </p>
-                              </td>
-                            </tr>
-                          </table>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td style="padding:18px 0;border-bottom:1px solid rgba(183,28,28,0.1);">
-                          <table width="100%" cellpadding="0" cellspacing="0">
-                            <tr>
-                              <td width="50" valign="top">
-                                <div style="width:40px;height:40px;background:linear-gradient(135deg, #b71c1c 0%, #8e0000 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(183,28,28,0.3);">
-                                  <span style="color:#ffffff;font-size:20px;font-weight:bold;">2</span>
-                                </div>
-                              </td>
-                              <td valign="top" style="padding-left:15px;">
-                                <p style="margin:0;color:#1a1a1a;font-size:17px;line-height:1.6;">
-                                  <strong style="color:#b71c1c;font-size:18px;">Verify Information:</strong> Access verified candidate profiles and employment history through <strong>Red-Flagged</strong>
-                                </p>
-                              </td>
-                            </tr>
-                          </table>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td style="padding:18px 0;border-bottom:1px solid rgba(183,28,28,0.1);">
-                          <table width="100%" cellpadding="0" cellspacing="0">
-                            <tr>
-                              <td width="50" valign="top">
-                                <div style="width:40px;height:40px;background:linear-gradient(135deg, #b71c1c 0%, #8e0000 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(183,28,28,0.3);">
-                                  <span style="color:#ffffff;font-size:20px;font-weight:bold;">3</span>
-                                </div>
-                              </td>
-                              <td valign="top" style="padding-left:15px;">
-                                <p style="margin:0;color:#1a1a1a;font-size:17px;line-height:1.6;">
-                                  <strong style="color:#b71c1c;font-size:18px;">Track Updates:</strong> Monitor candidate status changes and remarks in real-time on <strong>Red-Flagged</strong>
-                                </p>
-                              </td>
-                            </tr>
-                          </table>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td style="padding:18px 0;">
-                          <table width="100%" cellpadding="0" cellspacing="0">
-                            <tr>
-                              <td width="50" valign="top">
-                                <div style="width:40px;height:40px;background:linear-gradient(135deg, #b71c1c 0%, #8e0000 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(183,28,28,0.3);">
-                                  <span style="color:#ffffff;font-size:20px;font-weight:bold;">4</span>
-                                </div>
-                              </td>
-                              <td valign="top" style="padding-left:15px;">
-                                <p style="margin:0;color:#1a1a1a;font-size:17px;line-height:1.6;">
-                                  <strong style="color:#b71c1c;font-size:18px;">Build Trust:</strong> Maintain a high trust score on <strong>Red-Flagged</strong> by providing accurate information
-                                </p>
-                              </td>
-                            </tr>
-                          </table>
-                        </td>
-                      </tr>
-                    </table>
-                  </div>
-
-                  <!-- Next Steps with Red-Flagged Branding -->
-                  <div style="background:linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);border-radius:18px;padding:35px;margin:35px 0;border:3px solid #dee2e6;box-shadow:0 6px 20px rgba(0,0,0,0.08);">
-                    <div style="text-align:center;margin-bottom:25px;">
-                      <h3 style="margin:0;color:#495057;font-size:24px;font-weight:800;">
-                        📋 Your Next Steps with Red-Flagged:
-                      </h3>
-                    </div>
+                  <!-- Why Red-flagged.com Section -->
+                  <div style="background:linear-gradient(135deg, #fff5f5 0%, #ffe0e0 100%);border-left:5px solid #b71c1c;border-radius:12px;padding:30px;margin:30px 0;box-shadow:0 4px 15px rgba(183,28,28,0.1);">
+                    <h3 style="margin:0 0 20px 0;color:#b71c1c;font-size:22px;font-weight:700;">
+                      Why Red-flagged.com?
+                    </h3>
                     <table width="100%" cellpadding="0" cellspacing="0">
                       <tr>
-                        <td style="padding:15px 0;border-bottom:1px solid #dee2e6;">
-                          <div style="display:flex;align-items:flex-start;">
-                            <div style="width:35px;height:35px;background:linear-gradient(135deg, #b71c1c 0%, #8e0000 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 3px 10px rgba(183,28,28,0.3);">
-                              <span style="color:#ffffff;font-size:16px;font-weight:bold;">1</span>
-                            </div>
-                            <div style="padding-left:15px;flex:1;">
-                              <p style="margin:0;color:#2d3436;font-size:16px;line-height:1.8;">
-                                <strong style="color:#b71c1c;">Verify Your Email:</strong> Check your inbox for the OTP code from <strong>Red-Flagged</strong> to verify your corporate email address
-                              </p>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td style="padding:15px 0;border-bottom:1px solid #dee2e6;">
-                          <div style="display:flex;align-items:flex-start;">
-                            <div style="width:35px;height:35px;background:linear-gradient(135deg, #b71c1c 0%, #8e0000 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 3px 10px rgba(183,28,28,0.3);">
-                              <span style="color:#ffffff;font-size:16px;font-weight:bold;">2</span>
-                            </div>
-                            <div style="padding-left:15px;flex:1;">
-                              <p style="margin:0;color:#2d3436;font-size:16px;line-height:1.8;">
-                                <strong style="color:#b71c1c;">Wait for Admin Approval:</strong> The <strong>Red-Flagged</strong> team will review your registration and approve your account (usually within 24-48 hours)
-                              </p>
-                            </div>
-                          </div>
+                        <td style="padding:15px 0;border-bottom:1px solid rgba(183,28,28,0.1);">
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td width="40" valign="top">
+                                <div style="width:32px;height:32px;background:#b71c1c;border-radius:50%;display:flex;align-items:center;justify-content:center;">
+                                  <span style="color:#ffffff;font-size:18px;font-weight:bold;">✓</span>
+                                </div>
+                              </td>
+                              <td valign="top" style="padding-left:15px;">
+                                <p style="margin:0;color:#1a1a1a;font-size:16px;line-height:1.7;">
+                                  A pioneering space where employers can flag a withdrawn offer and you can respond with your side of the story.
+                                </p>
+                              </td>
+                            </tr>
+                          </table>
                         </td>
                       </tr>
                       <tr>
                         <td style="padding:15px 0;">
-                          <div style="display:flex;align-items:flex-start;">
-                            <div style="width:35px;height:35px;background:linear-gradient(135deg, #b71c1c 0%, #8e0000 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 3px 10px rgba(183,28,28,0.3);">
-                              <span style="color:#ffffff;font-size:16px;font-weight:bold;">3</span>
-                            </div>
-                            <div style="padding-left:15px;flex:1;">
-                              <p style="margin:0;color:#2d3436;font-size:16px;line-height:1.8;">
-                                <strong style="color:#b71c1c;">Start Using Red-Flagged:</strong> Once approved, you'll receive a confirmation email from <strong>Red-Flagged</strong> and can start inviting candidates!
-                              </p>
-                            </div>
-                          </div>
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td width="40" valign="top">
+                                <div style="width:32px;height:32px;background:#b71c1c;border-radius:50%;display:flex;align-items:center;justify-content:center;">
+                                  <span style="color:#ffffff;font-size:18px;font-weight:bold;">✓</span>
+                                </div>
+                              </td>
+                              <td valign="top" style="padding-left:15px;">
+                                <p style="margin:0;color:#1a1a1a;font-size:16px;line-height:1.7;">
+                                  It removes guesswork, letting future employers see the context behind any red flag.
+                                </p>
+                              </td>
+                            </tr>
+                          </table>
                         </td>
                       </tr>
                     </table>
                   </div>
 
-                  <!-- Premium CTA Button -->
-                  <div style="text-align:center;margin:45px 0 35px 0;">
-                    <a href="${siteUrl}/employer/login" 
-                       style="display:inline-block;background:linear-gradient(135deg, #b71c1c 0%, #8e0000 50%, #c62828 100%);color:#ffffff;text-decoration:none;padding:22px 50px;border-radius:50px;font-weight:800;font-size:18px;letter-spacing:0.5px;box-shadow:0 8px 25px rgba(183,28,28,0.5);text-transform:uppercase;border:2px solid rgba(255,255,255,0.2);transition:all 0.3s;">
-                      🚀 Access Red-Flagged Dashboard →
+                  <!-- How Does It Work Section -->
+                  <div style="background:#f8f9fa;border-radius:12px;padding:30px;margin:30px 0;border:2px solid #e9ecef;">
+                    <h3 style="margin:0 0 20px 0;color:#1a1a1a;font-size:22px;font-weight:700;">
+                      How Does It Work?
+                    </h3>
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding:12px 0;border-bottom:1px solid #dee2e6;">
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td width="35" valign="top">
+                                <div style="width:28px;height:28px;background:linear-gradient(135deg, #b71c1c 0%, #8e0000 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(183,28,28,0.3);">
+                                  <span style="color:#ffffff;font-size:14px;font-weight:bold;">1</span>
+                                </div>
+                              </td>
+                              <td valign="top" style="padding-left:12px;">
+                                <p style="margin:0;color:#2d3436;font-size:15px;line-height:1.7;">
+                                  You receive a brief notification whenever a flag is added to your profile.
+                                </p>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:12px 0;border-bottom:1px solid #dee2e6;">
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td width="35" valign="top">
+                                <div style="width:28px;height:28px;background:linear-gradient(135deg, #b71c1c 0%, #8e0000 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(183,28,28,0.3);">
+                                  <span style="color:#ffffff;font-size:14px;font-weight:bold;">2</span>
+                                </div>
+                              </td>
+                              <td valign="top" style="padding-left:12px;">
+                                <p style="margin:0;color:#2d3436;font-size:15px;line-height:1.7;">
+                                  Log in to read the employer's note.
+                                </p>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:12px 0;border-bottom:1px solid #dee2e6;">
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td width="35" valign="top">
+                                <div style="width:28px;height:28px;background:linear-gradient(135deg, #b71c1c 0%, #8e0000 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(183,28,28,0.3);">
+                                  <span style="color:#ffffff;font-size:14px;font-weight:bold;">3</span>
+                                </div>
+                              </td>
+                              <td valign="top" style="padding-left:12px;">
+                                <p style="margin:0;color:#2d3436;font-size:15px;line-height:1.7;">
+                                  Add a short justification (e.g., changed circumstances, another offer).
+                                </p>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:12px 0;">
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td width="35" valign="top">
+                                <div style="width:28px;height:28px;background:linear-gradient(135deg, #b71c1c 0%, #8e0000 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(183,28,28,0.3);">
+                                  <span style="color:#ffffff;font-size:14px;font-weight:bold;">4</span>
+                                </div>
+                              </td>
+                              <td valign="top" style="padding-left:12px;">
+                                <p style="margin:0;color:#2d3436;font-size:15px;line-height:1.7;">
+                                  Your explanation becomes part of your record, visible to any prospective employer.
+                                </p>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+                  </div>
+
+                  <!-- Your Voice Matters Section -->
+                  <div style="background:linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);border-left:4px solid #4caf50;border-radius:12px;padding:25px;margin:30px 0;">
+                    <h3 style="margin:0 0 15px 0;color:#1b5e20;font-size:20px;font-weight:700;">
+                      Your Voice Matters
+                    </h3>
+                    <p style="margin:0;color:#2e7d32;font-size:16px;line-height:1.7;">
+                      By sharing your perspective you protect your reputation, prevent missed opportunities, and demonstrate professionalism—turning a potential setback into a testament to your integrity.
+                    </p>
+                  </div>
+
+                  <!-- Support Section -->
+                  <div style="background:#fff5f5;border-left:4px solid #b71c1c;border-radius:8px;padding:20px;margin:30px 0;">
+                    <p style="margin:0;color:#1a1a1a;font-size:15px;line-height:1.7;">
+                      <strong style="color:#b71c1c;">Need Assistance?</strong><br/>
+                      Our support team is just a click away at <a href="mailto:support@redflag.com" style="color:#b71c1c;text-decoration:none;font-weight:600;">support@redflag.com</a>.
+                    </p>
+                  </div>
+
+                  <!-- Closing Message -->
+                  <div style="text-align:center;margin:35px 0 25px 0;padding:25px;background:linear-gradient(135deg, #fff5f5 0%, #ffe0e0 100%);border-radius:12px;">
+                    <p style="margin:0 0 10px 0;color:#b71c1c;font-size:20px;font-weight:700;">
+                      Welcome Aboard
+                    </p>
+                    <p style="margin:0;color:#2d3436;font-size:16px;line-height:1.7;">
+                      – let's make hiring transparent together!
+                    </p>
+                  </div>
+
+                  <!-- CTA Button -->
+                  <div style="text-align:center;margin:30px 0;">
+                    <a href="${siteUrl}/candidate/login" 
+                       style="display:inline-block;background:linear-gradient(135deg, #b71c1c 0%, #8e0000 100%);color:#ffffff;text-decoration:none;padding:16px 40px;border-radius:8px;font-weight:700;font-size:16px;box-shadow:0 4px 15px rgba(183,28,28,0.3);">
+                      Access Your Dashboard →
                     </a>
                   </div>
 
-                  <!-- Trust & Security Message -->
-                  <div style="background:linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);border-radius:16px;padding:25px;margin:35px 0;text-align:center;border:3px solid #81c784;box-shadow:0 6px 20px rgba(46,125,50,0.15);">
-                    <p style="margin:0;color:#1b5e20;font-size:17px;font-weight:700;line-height:1.7;">
-                      🔒 <strong>Red-Flagged</strong> Security Promise
+                  <!-- Sign Off -->
+                  <div style="margin-top:35px;padding-top:25px;border-top:1px solid #e9ecef;">
+                    <p style="margin:0 0 5px 0;color:#2d3436;font-size:15px;font-weight:600;">
+                      Warm regards,
                     </p>
-                    <p style="margin:10px 0 0 0;color:#2e7d32;font-size:15px;font-weight:600;line-height:1.6;">
-                      Your data is encrypted and secure. Only verified HR professionals can access candidate information on <strong>Red-Flagged</strong>.
-                    </p>
-                  </div>
-
-                  <!-- Support Message -->
-                  <div style="text-align:center;margin-top:35px;padding:25px;background:#f8f9fa;border-radius:16px;border:2px solid #e9ecef;">
-                    <p style="margin:0;color:#495057;font-size:16px;line-height:1.8;">
-                      If you have any questions or need assistance with <strong style="color:#b71c1c;">Red-Flagged</strong>, feel free to reach out to our support team. We're here to help! 💪
+                    <p style="margin:0;color:#b71c1c;font-size:16px;font-weight:700;">
+                      Team Red-Flagged.com
                     </p>
                   </div>
                 </td>
               </tr>
 
-              <!-- Premium Footer with Red-Flagged Branding -->
+              <!-- Disclaimer Footer -->
               <tr>
-                <td style="background:linear-gradient(135deg, #1a1a1a 0%, #2d3436 50%, #1a1a1a 100%);padding:45px 40px;text-align:center;position:relative;overflow:hidden;">
-                  <!-- Footer Background Pattern -->
-                  <div style="position:absolute;top:0;left:0;right:0;bottom:0;opacity:0.05;background-image:repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,0.1) 10px, rgba(255,255,255,0.1) 20px);"></div>
-                  
-                  <div style="position:relative;z-index:1;">
-                    <!-- Red-Flagged Brand -->
-                    <div style="margin-bottom:20px;">
-                      <h3 style="margin:0 0 10px 0;color:#ffffff;font-size:32px;font-weight:900;letter-spacing:2px;text-shadow:0 2px 10px rgba(0,0,0,0.3);">
-                        🚩 Red-Flagged
-                      </h3>
-                      <p style="margin:0;color:#bdc3c7;font-size:16px;font-weight:600;letter-spacing:1px;">
-                        Trust & Verification Platform
-                      </p>
-                    </div>
-                    
-                    <!-- Tagline -->
-                    <div style="margin:25px 0;padding:15px 0;border-top:1px solid rgba(255,255,255,0.1);border-bottom:1px solid rgba(255,255,255,0.1);">
-                      <p style="margin:0;color:#ffffff;font-size:18px;font-weight:700;line-height:1.6;font-style:italic;">
-                        "Building trust in the hiring process, one verification at a time."
-                      </p>
-                    </div>
-                    
-                    <!-- Copyright -->
-                    <div style="margin-top:25px;">
-                      <p style="margin:0 0 12px 0;color:#95a5a6;font-size:13px;font-weight:600;">
-                        © ${new Date().getFullYear()} <strong style="color:#ffffff;">Red-Flagged</strong>. All rights reserved.
-                      </p>
-                      <p style="margin:0;color:#7f8c8d;font-size:12px;">
-                        This email was sent to <strong style="color:#bdc3c7;">${to}</strong> because you registered on <strong style="color:#b71c1c;">Red-Flagged</strong>.
-                      </p>
-                    </div>
-                  </div>
+                <td style="background:#1a1a1a;padding:30px 40px;color:#bdc3c7;font-size:11px;line-height:1.6;">
+                  <p style="margin:0 0 12px 0;color:#95a5a6;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">
+                    Disclaimer
+                  </p>
+                  <p style="margin:0;color:#95a5a6;line-height:1.7;">
+                    This E-Mail may contain confidential and/or legally privileged information and is meant for the intended recipient/s only. If you have received this e-mail in error and are not the intended recipient/s, kindly notify the sender immediately and then delete this e-mail immediately from your system. You are also hereby notified that any use, any form of reproduction, dissemination, copying, disclosure, modification, distribution and/or publication of this e-mail, its contents or its attachment/s other than by its intended recipient/s is strictly prohibited and may be unlawful. Internet communications cannot be guaranteed to be secure or error-free as information could be delayed, intercepted, corrupted, lost, or contain viruses. Red-flagged.com does not accept any liability for any errors, omissions, viruses or computer problems experienced by any recipient as a result of this e-mail. The contents of this email do not necessarily represent the views or policies of Red-flagged.com
+                  </p>
+                  <p style="margin:15px 0 0 0;color:#7f8c8d;font-size:10px;text-align:center;">
+                    © ${new Date().getFullYear()} Red-flagged.com. All rights reserved.
+                  </p>
                 </td>
               </tr>
             </table>
@@ -582,8 +574,262 @@ export async function sendEmployerWelcomeEmail(to, hrName, companyName, siteUrl)
     </html>
   `;
 
-  console.log('📨 Preparing employer welcome email:', { to, hrName, companyName, siteUrl });
+  // Validate inputs
+  if (!to) {
+    const errorMsg = `Missing required parameters: to=${to}`;
+    console.error('❌', errorMsg);
+    throw new Error(errorMsg);
+  }
   
+  try {
+    const mailOptions = {
+      from: from,
+      to: to,
+      subject: subject,
+      html: html
+    };
+    
+    const info = await transport.sendMail(mailOptions);
+    return info;
+  } catch (err) {
+    console.error('❌ Failed to send candidate welcome email');
+    console.error('Error details:', {
+      message: err?.message,
+      response: err?.response,
+      code: err?.code,
+      command: err?.command,
+      responseCode: err?.responseCode
+    });
+    throw err;
+  }
+}
+
+export async function sendEmployerWelcomeEmail(to, hrName, companyName, siteUrl) {
+  const transport = getTransporter();
+  const subject = `Welcome to Red-flagged.com – The First‑of‑Its‑Kind Bridge Between Employers & Candidates`;
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    </head>
+    <body style="margin:0;padding:0;background:#f6f7fb;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f7fb;padding:40px 20px;">
+        <tr>
+          <td align="center">
+            <table role="presentation" width="680" cellpadding="0" cellspacing="0" style="max-width:680px;background:#ffffff;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.1);overflow:hidden;">
+              
+              <!-- Hero Header -->
+              <tr>
+                <td style="background:linear-gradient(135deg, #b71c1c 0%, #8e0000 100%);padding:50px 40px;text-align:center;">
+                  <h1 style="margin:0 0 10px 0;color:#ffffff;font-size:36px;font-weight:800;letter-spacing:1px;">
+                    🚩 Red-flagged.com
+                  </h1>
+                  <p style="margin:0;color:#ffebee;font-size:16px;font-weight:500;">
+                    Creating Transparent Bridges Between Employers and Candidates
+                  </p>
+                </td>
+              </tr>
+
+              <!-- Main Content -->
+              <tr>
+                <td style="padding:45px 40px;background:#ffffff;">
+                  <!-- Greeting -->
+                  <div style="margin-bottom:30px;">
+                    <h2 style="margin:0 0 15px 0;color:#1a1a1a;font-size:28px;font-weight:700;line-height:1.3;">
+                      Dear ${hrName || 'Employer'},
+                    </h2>
+                    <p style="margin:0;color:#2d3436;font-size:16px;line-height:1.8;">
+                      We're delighted to welcome you to <strong style="color:#b71c1c;">Red-flagged.com</strong>, the pioneering platform that creates a transparent bridge between employers and candidates. By joining, you gain a trusted partner that helps reduce last‑minute offer withdrawals and builds a more reliable hiring ecosystem.
+                    </p>
+                  </div>
+
+                  <!-- Why Red-flagged.com Section -->
+                  <div style="background:linear-gradient(135deg, #fff5f5 0%, #ffe0e0 100%);border-left:5px solid #b71c1c;border-radius:12px;padding:30px;margin:30px 0;box-shadow:0 4px 15px rgba(183,28,28,0.1);">
+                    <h3 style="margin:0 0 20px 0;color:#b71c1c;font-size:22px;font-weight:700;">
+                      Why Red-flagged.com?
+                    </h3>
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding:15px 0;border-bottom:1px solid rgba(183,28,28,0.1);">
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td width="40" valign="top">
+                                <div style="width:32px;height:32px;background:#b71c1c;border-radius:50%;display:flex;align-items:center;justify-content:center;">
+                                  <span style="color:#ffffff;font-size:18px;font-weight:bold;">✓</span>
+                                </div>
+                              </td>
+                              <td valign="top" style="padding-left:15px;">
+                                <p style="margin:0;color:#1a1a1a;font-size:16px;line-height:1.7;">
+                                  <strong style="color:#b71c1c;">First in the market</strong> – the only service that lets you flag a candidate who declined an offer and gives them a chance to explain.
+                                </p>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:15px 0;border-bottom:1px solid rgba(183,28,28,0.1);">
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td width="40" valign="top">
+                                <div style="width:32px;height:32px;background:#b71c1c;border-radius:50%;display:flex;align-items:center;justify-content:center;">
+                                  <span style="color:#ffffff;font-size:18px;font-weight:bold;">✓</span>
+                                </div>
+                              </td>
+                              <td valign="top" style="padding-left:15px;">
+                                <p style="margin:0;color:#1a1a1a;font-size:16px;line-height:1.7;">
+                                  <strong style="color:#b71c1c;">Improves reliability</strong> – see the context behind a withdrawal before you extend your next offer, saving time and cost.
+                                </p>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:15px 0;">
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td width="40" valign="top">
+                                <div style="width:32px;height:32px;background:#b71c1c;border-radius:50%;display:flex;align-items:center;justify-content:center;">
+                                  <span style="color:#ffffff;font-size:18px;font-weight:bold;">✓</span>
+                                </div>
+                              </td>
+                              <td valign="top" style="padding-left:15px;">
+                                <p style="margin:0;color:#1a1a1a;font-size:16px;line-height:1.7;">
+                                  <strong style="color:#b71c1c;">Fosters fairness</strong> – both sides can share their side of the story, strengthening trust in the talent market.
+                                </p>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+                  </div>
+
+                  <!-- How It Works Section -->
+                  <div style="background:#f8f9fa;border-radius:12px;padding:30px;margin:30px 0;border:2px solid #e9ecef;">
+                    <h3 style="margin:0 0 20px 0;color:#1a1a1a;font-size:22px;font-weight:700;">
+                      How It Works for You
+                    </h3>
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding:12px 0;border-bottom:1px solid #dee2e6;">
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td width="35" valign="top">
+                                <div style="width:28px;height:28px;background:linear-gradient(135deg, #b71c1c 0%, #8e0000 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(183,28,28,0.3);">
+                                  <span style="color:#ffffff;font-size:14px;font-weight:bold;">1</span>
+                                </div>
+                              </td>
+                              <td valign="top" style="padding-left:12px;">
+                                <p style="margin:0;color:#2d3436;font-size:15px;line-height:1.7;">
+                                  Flag a candidate, when an offer is declined.
+                                </p>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:12px 0;border-bottom:1px solid #dee2e6;">
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td width="35" valign="top">
+                                <div style="width:28px;height:28px;background:linear-gradient(135deg, #b71c1c 0%, #8e0000 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(183,28,28,0.3);">
+                                  <span style="color:#ffffff;font-size:14px;font-weight:bold;">2</span>
+                                </div>
+                              </td>
+                              <td valign="top" style="padding-left:12px;">
+                                <p style="margin:0;color:#2d3436;font-size:15px;line-height:1.7;">
+                                  The candidate receives a notification and can submit a brief justification.
+                                </p>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:12px 0;">
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td width="35" valign="top">
+                                <div style="width:28px;height:28px;background:linear-gradient(135deg, #b71c1c 0%, #8e0000 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(183,28,28,0.3);">
+                                  <span style="color:#ffffff;font-size:14px;font-weight:bold;">3</span>
+                                </div>
+                              </td>
+                              <td valign="top" style="padding-left:12px;">
+                                <p style="margin:0;color:#2d3436;font-size:15px;line-height:1.7;">
+                                  Your dashboard displays a clear record, helping you make informed hiring decisions.
+                                </p>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+                  </div>
+
+                  <!-- Support Section -->
+                  <div style="background:#e8f5e9;border-left:4px solid #4caf50;border-radius:8px;padding:20px;margin:30px 0;">
+                    <p style="margin:0;color:#1b5e20;font-size:15px;line-height:1.7;">
+                      If you have any questions or need assistance, our support team is just a click away at <a href="mailto:support@redflagged.com" style="color:#b71c1c;text-decoration:none;font-weight:600;">support@redflagged.com</a>.
+                    </p>
+                  </div>
+
+                  <!-- Closing Message -->
+                  <div style="text-align:center;margin:35px 0 25px 0;padding:25px;background:linear-gradient(135deg, #fff5f5 0%, #ffe0e0 100%);border-radius:12px;">
+                    <p style="margin:0 0 10px 0;color:#b71c1c;font-size:20px;font-weight:700;">
+                      Welcome Aboard
+                    </p>
+                    <p style="margin:0;color:#2d3436;font-size:16px;line-height:1.7;">
+                      – let's make hiring more transparent together!
+                    </p>
+                  </div>
+
+                  <!-- CTA Button -->
+                  <div style="text-align:center;margin:30px 0;">
+                    <a href="${siteUrl}/employer/login" 
+                       style="display:inline-block;background:linear-gradient(135deg, #b71c1c 0%, #8e0000 100%);color:#ffffff;text-decoration:none;padding:16px 40px;border-radius:8px;font-weight:700;font-size:16px;box-shadow:0 4px 15px rgba(183,28,28,0.3);">
+                      Access Your Dashboard →
+                    </a>
+                  </div>
+
+                  <!-- Sign Off -->
+                  <div style="margin-top:35px;padding-top:25px;border-top:1px solid #e9ecef;">
+                    <p style="margin:0 0 5px 0;color:#2d3436;font-size:15px;font-weight:600;">
+                      Best regards,
+                    </p>
+                    <p style="margin:0;color:#b71c1c;font-size:16px;font-weight:700;">
+                      Team Red-Flagged.com
+                    </p>
+                  </div>
+                </td>
+              </tr>
+
+              <!-- Disclaimer Footer -->
+              <tr>
+                <td style="background:#1a1a1a;padding:30px 40px;color:#bdc3c7;font-size:11px;line-height:1.6;">
+                  <p style="margin:0 0 12px 0;color:#95a5a6;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">
+                    Disclaimer
+                  </p>
+                  <p style="margin:0;color:#95a5a6;line-height:1.7;">
+                    This E-Mail may contain confidential and/or legally privileged information and is meant for the intended recipient/s only. If you have received this e-mail in error and are not the intended recipient/s, kindly notify the sender immediately and then delete this e-mail immediately from your system. You are also hereby notified that any use, any form of reproduction, dissemination, copying, disclosure, modification, distribution and/or publication of this e-mail, its contents or its attachment/s other than by its intended recipient/s is strictly prohibited and may be unlawful. Internet communications cannot be guaranteed to be secure or error-free as information could be delayed, intercepted, corrupted, lost, or contain viruses. Red-flagged.com does not accept any liability for any errors, omissions, viruses or computer problems experienced by any recipient as a result of this e-mail. The contents of this email do not necessarily represent the views or policies of Red-flagged.com
+                  </p>
+                  <p style="margin:15px 0 0 0;color:#7f8c8d;font-size:10px;text-align:center;">
+                    © ${new Date().getFullYear()} Red-flagged.com. All rights reserved.
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
+  `;
+
   // Validate inputs
   if (!to || !companyName) {
     const errorMsg = `Missing required parameters: to=${to}, companyName=${companyName}`;
@@ -599,18 +845,7 @@ export async function sendEmployerWelcomeEmail(to, hrName, companyName, siteUrl)
       html: html
     };
     
-    console.log('📧 Sending welcome email with options:', { 
-      from: mailOptions.from, 
-      to: mailOptions.to, 
-      subject: mailOptions.subject,
-      htmlLength: mailOptions.html?.length 
-    });
-    
     const info = await transport.sendMail(mailOptions);
-    console.log('✅ Employer welcome email sent successfully. messageId:', info?.messageId);
-    if (info?.response) console.log('SMTP response:', info.response);
-    if (info?.accepted) console.log('Accepted recipients:', info.accepted);
-    if (info?.rejected) console.log('Rejected recipients:', info.rejected);
     return info;
   } catch (err) {
     console.error('❌ Failed to send employer welcome email');

@@ -2,16 +2,40 @@ import Employer from '../models/Employer.js';
 import Candidate from '../models/Candidate.js';
 import CandidateUser from '../models/CandidateUser.js';
 import Admin from '../models/Admin.js';
+import { sendEmployerWelcomeEmail, sendCandidateWelcomeEmailOnApproval } from '../utils/mailer.js';
 
 export async function listEmployers(_req, res) {
   const employers = await Employer.find().sort({ createdAt: -1 }).select('-passwordHash');
-  res.json(employers);
+  
+  // Get candidate counts for each employer
+  const employersWithCounts = await Promise.all(
+    employers.map(async (employer) => {
+      const candidateCount = await Candidate.countDocuments({ employer: employer._id });
+      return {
+        ...employer.toObject(),
+        candidateCount
+      };
+    })
+  );
+  
+  res.json(employersWithCounts);
 }
 
 export async function approveEmployer(req, res) {
   const { id } = req.params;
   const employer = await Employer.findByIdAndUpdate(id, { status: 'approved' }, { new: true });
   if (!employer) return res.status(404).json({ message: 'Employer not found' });
+  
+  // Send welcome email automatically after approval
+  try {
+    const siteUrl = process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_FRONTEND_URL || 'http://localhost:3000';
+    await sendEmployerWelcomeEmail(employer.email, employer.hrName, employer.companyName, siteUrl);
+    console.log(`✅ Welcome email sent to employer after approval: ${employer.email}`);
+  } catch (emailError) {
+    console.error('❌ Failed to send welcome email after approval:', emailError?.message || emailError);
+    // Don't fail the approval if email fails, but log it
+  }
+  
   res.json({ id: employer.id, status: employer.status });
 }
 
@@ -98,6 +122,20 @@ export async function approveCandidateUser(req, res) {
     }
     // If notes is just "approved" or empty, don't create history entry
   } catch (_) {}
+  
+  // Send welcome email to candidate after approval
+  try {
+    const siteUrl = process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_FRONTEND_URL || 'http://localhost:3000';
+    await sendCandidateWelcomeEmailOnApproval(
+      user.email || user.primaryEmail, 
+      user.fullName, 
+      siteUrl
+    );
+    console.log(`✅ Welcome email sent to candidate after approval: ${user.email || user.primaryEmail}`);
+  } catch (emailError) {
+    console.error('❌ Failed to send welcome email after candidate approval:', emailError?.message || emailError);
+    // Don't fail the approval if email fails, but log it
+  }
   
   res.json({ 
     id: user.id, 

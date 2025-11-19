@@ -6,6 +6,8 @@ import adminRoutes from './routes/admin.routes.js';
 import employerRoutes from './routes/employer.routes.js';
 import reportRoutes from './routes/report.routes.js';
 import candidateRoutes from './routes/candidate.routes.js';
+import contactRoutes from './routes/contact.routes.js';
+import blogRoutes from './routes/blog.routes.js';
 import { connectDB } from './config/db.js';
 
 dotenv.config();
@@ -16,7 +18,7 @@ const app = express();
 
 app.use(
   cors({
-    origin: ["https://redhunt.vercel.app","https://redhunt.vercel.app/", "http://localhost:3000"],
+    origin: ["https://www.red-flagged.com/","red-flagged.com", "http://localhost:3000"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH","OPTIONS"],
     credentials: true,
@@ -30,6 +32,8 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/employer', employerRoutes);
 app.use('/api', reportRoutes);
 app.use('/api/candidate', candidateRoutes);
+app.use('/api', contactRoutes);
+app.use('/api/blogs', blogRoutes);
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
