@@ -8,6 +8,16 @@ const CandidateSchema = new mongoose.Schema(
       required: true,
       trim: true
     },
+    firstName: {
+      type: String,
+      trim: true,
+      maxlength: 100
+    },
+    lastName: {
+      type: String,
+      trim: true,
+      maxlength: 100
+    },
     email: {
       type: String,
       required: true,
@@ -31,38 +41,11 @@ const CandidateSchema = new mongoose.Schema(
       type: Date,
       required: true
     },
-    offerStatus: {
-      type: String,
-      required: true,
-      enum: [
-        'Offer Letter Given',
-        'Offer Accepted', 
-        'Offer Rejected',
-        'Not Joined After Acceptance',
-        'Ghosted After Offer',
-        'Joined But Left Early',
-        'Blacklisted'
-      ]
-    },
     reason: {
       type: String,
       required: true,
-      enum: [
-        'Accepted Another Offer',
-        'Counter Offer from Current Company',
-        'Salary Expectations Not Met',
-        'Location Not Suitable',
-        'Family Issues',
-        'Health Issues',
-        'No Response After Acceptance',
-        'Ghosted Completely',
-        'Asked for More Time Then Disappeared',
-        'Joined But Left Within 1 Month',
-        'Joined But Left Within 3 Months',
-        'Performance Issues',
-        'Misrepresented Information',
-        'Other'
-      ]
+      trim: true,
+      maxlength: 500
     },
     
     // Professional Information (Optional)
@@ -80,10 +63,6 @@ const CandidateSchema = new mongoose.Schema(
       maxlength: 10,
       sparse: true,
       match: [/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/, 'Please enter a valid PAN number']
-    },
-    designation: {
-      type: String,
-      trim: true
     },
     currentCompany: {
       type: String,
@@ -120,6 +99,41 @@ const CandidateSchema = new mongoose.Schema(
       default: false,
       index: true
     },
+    // Red-Flagged update history for invited candidates
+    updateHistory: [
+      {
+        points: {
+          type: Number,
+          default: 1
+        },
+        date: {
+          type: Date,
+          default: Date.now
+        },
+        updatedByRole: {
+          type: String,
+          enum: ['employer'],
+          default: 'employer'
+        },
+        updatedByName: {
+          type: String,
+          trim: true
+        },
+        companyName: {
+          type: String,
+          trim: true
+        },
+        employer: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Employer'
+        },
+        notes: {
+          type: String,
+          trim: true,
+          maxlength: 500
+        }
+      }
+    ],
   },
   { 
     timestamps: true,
@@ -135,10 +149,10 @@ CandidateSchema.index({ employer: 1, mobile: 1 }, { unique: true }); // Mobile u
 CandidateSchema.index({ uan: 1 }, { unique: true, sparse: true });
 CandidateSchema.index({ panNumber: 1 }, { unique: true, sparse: true });
 CandidateSchema.index({ employer: 1 });
-CandidateSchema.index({ offerStatus: 1 });
 CandidateSchema.index({ createdAt: -1 });
 CandidateSchema.index({ name: 1 });
 CandidateSchema.index({ mobile: 1 }); // Index for faster mobile lookups
+CandidateSchema.index({ 'updateHistory.date': 1 });
 
 // Virtual for formatted mobile number
 CandidateSchema.virtual('formattedMobile').get(function() {
@@ -148,26 +162,20 @@ CandidateSchema.virtual('formattedMobile').get(function() {
   return this.mobile;
 });
 
-// Pre-save middleware to update joiningStatus based on offerStatus
+// Pre-save middleware to keep derived name fields in sync
 CandidateSchema.pre('save', function(next) {
-  if (this.offerStatus) {
-    switch (this.offerStatus) {
-      case 'Joined But Left Early':
-        this.joiningStatus = 'not_joined';
-        break;
-      case 'Offer Accepted':
-        this.joiningStatus = 'pending';
-        break;
-      case 'Offer Rejected':
-      case 'Not Joined After Acceptance':
-      case 'Ghosted After Offer':
-      case 'Blacklisted':
-        this.joiningStatus = 'not_joined';
-        break;
-      default:
-        this.joiningStatus = 'pending';
-    }
+  const buildName = () => [this.firstName, this.lastName].filter(Boolean).join(' ').trim();
+
+  if ((this.isModified('firstName') || this.isModified('lastName')) && (this.firstName || this.lastName)) {
+    this.name = buildName();
+  } else if (!this.name && (this.firstName || this.lastName)) {
+    this.name = buildName();
+  } else if (!this.firstName && !this.lastName && this.isModified('name') && typeof this.name === 'string' && this.name.trim()) {
+    const parts = this.name.trim().split(/\s+/);
+    this.firstName = parts.shift() || '';
+    this.lastName = parts.join(' ') || '';
   }
+
   next();
 });
 
@@ -178,13 +186,7 @@ CandidateSchema.methods.hasJoined = function() {
 
 // Instance method to check if candidate is problematic
 CandidateSchema.methods.isProblematic = function() {
-  const problematicStatuses = [
-    'Not Joined After Acceptance',
-    'Ghosted After Offer',
-    'Joined But Left Early',
-    'Blacklisted'
-  ];
-  return problematicStatuses.includes(this.offerStatus);
+  return this.joiningStatus === 'not_joined';
 };
 
 // Static method to find candidates by employer
@@ -194,16 +196,34 @@ CandidateSchema.statics.findByEmployer = function(employerId) {
 
 // Static method to find problematic candidates
 CandidateSchema.statics.findProblematic = function(employerId) {
-  const problematicStatuses = [
-    'Not Joined After Acceptance',
-    'Ghosted After Offer',
-    'Joined But Left Early',
-    'Blacklisted'
-  ];
   return this.find({ 
     employer: employerId, 
-    offerStatus: { $in: problematicStatuses } 
+    joiningStatus: 'not_joined'
   }).sort({ createdAt: -1 });
+};
+
+// Method to append an update history entry with auto-incremented points
+CandidateSchema.methods.appendUpdateHistory = function({ role, name, companyName, employerId, notes }) {
+  const nextPoints = (Array.isArray(this.updateHistory) ? this.updateHistory.length : 0) + 1;
+  this.updateHistory = this.updateHistory || [];
+  this.updateHistory.push({
+    points: nextPoints,
+    updatedByRole: role || 'employer',
+    updatedByName: name || null,
+    companyName: companyName || null,
+    employer: employerId || null,
+    notes: notes || null
+  });
+  return this.save();
+};
+
+// Helper to resequence points after modifications or deletions
+CandidateSchema.methods.resequenceUpdateHistory = function() {
+  if (!Array.isArray(this.updateHistory)) return this;
+  this.updateHistory.forEach((entry, idx) => {
+    entry.points = idx + 1;
+  });
+  return this;
 };
 
 export default mongoose.model('Candidate', CandidateSchema);

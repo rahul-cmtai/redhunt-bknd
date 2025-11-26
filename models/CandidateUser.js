@@ -3,7 +3,9 @@ import mongoose from 'mongoose';
 const CandidateUserSchema = new mongoose.Schema(
   {
     // Basic Information
-    fullName: { type: String, required: true },
+    firstName: { type: String, trim: true, maxlength: 100 },
+    lastName: { type: String, trim: true, maxlength: 100 },
+    fullName: { type: String, required: true, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true },
     phone: { type: String },
     pan: { type: String, required: true, unique: true, sparse: true },
@@ -139,6 +141,16 @@ CandidateUserSchema.index({ 'updateHistory.date': 1 });
 
 // Pre-save middleware to calculate profile completeness
 CandidateUserSchema.pre('save', function(next) {
+  if ((this.isModified('firstName') || this.isModified('lastName')) && (this.firstName || this.lastName)) {
+    this.fullName = [this.firstName, this.lastName].filter(Boolean).join(' ').trim();
+  } else if (!this.fullName && (this.firstName || this.lastName)) {
+    this.fullName = [this.firstName, this.lastName].filter(Boolean).join(' ').trim();
+  } else if ((!this.firstName && !this.lastName) && this.isModified('fullName') && typeof this.fullName === 'string' && this.fullName.trim()) {
+    const parts = this.fullName.trim().split(/\s+/);
+    this.firstName = parts.shift() || '';
+    this.lastName = parts.join(' ') || '';
+  }
+
   const requiredFields = [
     'fullName', 'fathersName', 'gender', 'dob', 'permanentAddress', 'currentAddress',
     'mobileNumber', 'primaryEmail', 'panNumber', 'highestQualification',

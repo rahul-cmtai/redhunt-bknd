@@ -27,6 +27,17 @@ const EmployerSchema = new mongoose.Schema(
     },
     
     // HR Person Information
+    hrFirstName: {
+      type: String,
+      trim: true,
+      maxlength: 100,
+      index: true
+    },
+    hrLastName: {
+      type: String,
+      trim: true,
+      maxlength: 100
+    },
     hrName: { 
       type: String, 
       required: true, 
@@ -127,6 +138,21 @@ EmployerSchema.pre('save', async function(next) {
       return next(error);
     }
   }
+
+  const buildHrName = () => {
+    return [this.hrFirstName, this.hrLastName].filter(Boolean).join(' ').trim();
+  };
+
+  if ((this.isModified('hrFirstName') || this.isModified('hrLastName')) && (this.hrFirstName || this.hrLastName)) {
+    this.hrName = buildHrName();
+  } else if (!this.hrName && (this.hrFirstName || this.hrLastName)) {
+    this.hrName = buildHrName();
+  } else if (this.isModified('hrName') && !this.isModified('hrFirstName') && !this.isModified('hrLastName') && typeof this.hrName === 'string' && this.hrName.trim()) {
+    const parts = this.hrName.trim().split(/\s+/);
+    this.hrFirstName = parts.shift() || '';
+    this.hrLastName = parts.join(' ') || '';
+  }
+
   next();
 });
 

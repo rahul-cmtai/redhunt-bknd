@@ -6,22 +6,6 @@ import { computeTrustScore } from '../utils/scoring.js';
 import { sendCandidateInvitationEmail, sendCandidateWelcomeEmail } from '../utils/mailer.js';
 import mongoose from 'mongoose';
 
-
-function normalizeOfferToJoiningStatus(offerStatus) {
-  const s = (offerStatus || '').toLowerCase();
-  if (s === 'joined') return 'joined';
-  if (s === 'not joined') return 'not_joined';
-  return 'pending';
-}
-
-const VALID_OFFER_STATUSES = ['Offered', 'Accepted', 'Rejected', 'Joined', 'Not Joined', ''];
-function sanitizeOfferStatus(status) {
-  if (!status) return ''; 
-
-  const foundStatus = VALID_OFFER_STATUSES.find(valid => valid.toLowerCase() === status.trim().toLowerCase());
-  return foundStatus !== undefined ? foundStatus : ''; 
-}
-
 // Helper function to normalize mobile numbers for comparison
 // Removes spaces, dashes, parentheses, and plus signs, keeping only digits
 function normalizeMobileNumber(mobile) {
@@ -41,7 +25,6 @@ export async function addCandidate(req, res) {
     mobile, 
     position, 
     offerDate, 
-    offerStatus, 
     reason,
     // Optional fields
     uan, 
@@ -59,7 +42,6 @@ export async function addCandidate(req, res) {
   if (!mobile) missing.push('mobile');
   if (!position) missing.push('position');
   if (!offerDate) missing.push('offerDate');
-  if (!offerStatus) missing.push('offerStatus');
   if (!reason) missing.push('reason');
   
   if (missing.length > 0) {
@@ -150,8 +132,8 @@ export async function addCandidate(req, res) {
       mobile: mobile.trim(),
       position: position.trim(),
       offerDate: new Date(offerDate),
-      offerStatus: offerStatus.trim(),
       reason: reason.trim(),
+      joiningStatus: 'not_joined',
       // Optional fields
       uan: uan ? uan.trim().toUpperCase() : undefined,
       panNumber: panNumber ? panNumber.trim().toUpperCase() : undefined,
@@ -161,6 +143,21 @@ export async function addCandidate(req, res) {
       notes: notes ? notes.trim() : undefined,
       verified: false
     });
+
+    // If initial notes are provided, also append to candidate's update history
+    if (notes && notes.trim()) {
+      try {
+        await candidate.appendUpdateHistory({
+          role: 'employer',
+          name: employer?.hrName || employer?.companyName || 'Employer',
+          companyName: employer?.companyName || null,
+          employerId,
+          notes: notes.trim()
+        });
+      } catch (historyError) {
+        console.error('Failed to append candidate update history:', historyError);
+      }
+    }
     
     // Send welcome email to candidate (if employer exists)
     if (employer) {
@@ -191,7 +188,6 @@ export async function addCandidate(req, res) {
       targetId: candidate._id, 
       metadata: { 
         email, 
-        offerStatus, 
         reason,
         position 
       },
@@ -206,7 +202,6 @@ export async function addCandidate(req, res) {
         email: candidate.email,
         mobile: candidate.mobile,
         position: candidate.position,
-        offerStatus: candidate.offerStatus,
         reason: candidate.reason,
         joiningStatus: candidate.joiningStatus,
         createdAt: candidate.createdAt
@@ -232,6 +227,115 @@ export async function addCandidate(req, res) {
 }
 
 // Bulk upload removed as per requirements
+
+// Allow employer to update an invited candidate (Candidate model) they created
+export async function updateInvitedCandidate(req, res) {
+  const employerId = req.user.id;
+  const { id } = req.params;
+  const historyMode = (req.body && req.body.historyMode) || 'add'; // 'add' | 'edit'
+
+  // Only allow editing a safe subset of fields
+  const allowedFields = [
+    'position',
+    'offerDate',
+    'reason',
+    'currentCompany',
+    'joiningDate',
+    'notes'
+  ];
+
+  const updates = {};
+  for (const key of allowedFields) {
+    if (key in req.body) {
+      updates[key] = req.body[key];
+    }
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return res.status(400).json({ message: 'No fields to update' });
+  }
+
+  // Basic validation for dates if provided as strings
+  if (updates.offerDate) {
+    const d = new Date(updates.offerDate);
+    if (Number.isNaN(d.getTime())) {
+      return res.status(400).json({ message: 'Invalid offerDate' });
+    }
+    updates.offerDate = d;
+  }
+
+  if (updates.joiningDate) {
+    const d = new Date(updates.joiningDate);
+    if (Number.isNaN(d.getTime())) {
+      return res.status(400).json({ message: 'Invalid joiningDate' });
+    }
+    updates.joiningDate = d;
+  }
+
+  try {
+    const candidate = await Candidate.findOne({ _id: id, employer: employerId });
+    if (!candidate) {
+      return res.status(404).json({ message: 'Candidate not found for this employer' });
+    }
+
+    const previousNotes = candidate.notes;
+    Object.assign(candidate, updates);
+    await candidate.save();
+
+    // If notes changed, either append a new history entry (add) or edit last entry (edit)
+    if (Object.prototype.hasOwnProperty.call(updates, 'notes') && updates.notes !== previousNotes) {
+      try {
+        const employer = await Employer.findById(employerId).select('companyName hrName');
+
+        if (historyMode === 'edit') {
+          // Update latest history entry's notes (do not create a new Red-Flagged point)
+          if (Array.isArray(candidate.updateHistory) && candidate.updateHistory.length > 0) {
+            const lastEntry = candidate.updateHistory[candidate.updateHistory.length - 1];
+            lastEntry.notes = updates.notes;
+            candidate.resequenceUpdateHistory();
+            await candidate.save();
+          }
+        } else {
+          // Default: add a new history entry
+          await candidate.appendUpdateHistory({
+            role: 'employer',
+            name: employer?.hrName || employer?.companyName || 'Employer',
+            companyName: employer?.companyName || null,
+            employerId,
+            notes: updates.notes
+          });
+        }
+      } catch (historyError) {
+        console.error('Failed to update invited candidate history on update:', historyError);
+      }
+    }
+
+    return res.json({
+      success: true,
+      candidate: {
+        id: candidate._id,
+        name: candidate.name,
+        firstName: candidate.firstName,
+        lastName: candidate.lastName,
+        email: candidate.email,
+        mobile: candidate.mobile,
+        position: candidate.position,
+        offerDate: candidate.offerDate,
+        reason: candidate.reason,
+        joiningDate: candidate.joiningDate,
+        currentCompany: candidate.currentCompany,
+        notes: candidate.notes,
+        updateHistory: candidate.updateHistory,
+        joiningStatus: candidate.joiningStatus,
+        createdAt: candidate.createdAt,
+        updatedAt: candidate.updatedAt,
+      }
+    });
+  } catch (error) {
+    console.error('Error updating invited candidate:', error);
+    return res.status(500).json({ message: 'Error updating candidate', error: error.message });
+  }
+}
 
 
 
@@ -356,14 +460,23 @@ export async function listAllCandidates(req, res) {
       id: candidate._id,
       type: 'invited',
       name: candidate.name,
+      firstName: candidate.firstName,
+      lastName: candidate.lastName,
       email: candidate.email,
+      primaryEmail: candidate.email,
       mobile: candidate.mobile,
+      mobileNumber: candidate.mobile,
       uan: candidate.uan,
+      panNumber: candidate.panNumber,
       position: candidate.position,
       offerDate: candidate.offerDate,
-      offerStatus: candidate.offerStatus,
+      reason: candidate.reason,
       joiningDate: candidate.joiningDate,
       joiningStatus: candidate.joiningStatus,
+      currentCompany: candidate.currentCompany,
+      designation: candidate.designation,
+      notes: candidate.notes,
+      updateHistory: candidate.updateHistory || [],
       verified: candidate.verified,
       createdAt: candidate.createdAt,
       updatedAt: candidate.updatedAt

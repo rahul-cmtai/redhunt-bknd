@@ -14,6 +14,7 @@ import {
   updateCandidateUserHistoryByEmployer,
   deleteCandidateUserHistoryByEmployer,
   getCandidateUserUpdateHistoryByEmployer,
+  updateInvitedCandidate,
 } from '../controllers/employer.controller.js';
 
 const router = Router();
@@ -21,6 +22,7 @@ const router = Router();
 router.use(authenticate, requireRole('employer'), requireApprovedEmployer);
 
 router.post('/candidates', addCandidate);
+router.patch('/candidates/:id', updateInvitedCandidate);
 
 router.get('/verify', verifyCandidate);
 router.get('/candidates', listCandidates);

@@ -91,9 +91,8 @@ API Overview
   - DELETE `/api/admin/candidate-users/:id/update-history/:entryId`
 
 - Employer (requires Bearer token of employer)
-  - POST `/api/employer/candidates` { name, uan?, email, mobile?, position?, offerDate?, offerStatus?, joiningDate?, reason?, notes? }
-    - offerStatus options: `Offered | Accepted | Rejected | Joined | Not Joined`
-    - offerStatus maps to joiningStatus: Joined → `joined`, Not Joined → `not_joined`, others → `pending`
+- POST `/api/employer/candidates` { name, uan?, panNumber?, email, mobile?, position?, offerDate?, designation?, currentCompany?, joiningDate?, reason?, notes? }
+    - new records now default `joiningStatus` to `not_joined` (UI no longer collects offer status)
     - **NEW**: Automatically sends invitation email to candidate when added
   - GET `/api/employer/verify` (query: `uan` | `email` | `mobile`)
   - GET `/api/employer/candidates` (query: `search?` - optional search by email or UAN)
