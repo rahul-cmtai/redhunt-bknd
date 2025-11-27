@@ -58,13 +58,8 @@ const CandidateUserSchema = new mongoose.Schema(
     negotiableDays: { type: Number, required: true, min: 0, max: 365 },
     skillSets: [{
       type: String,
-      enum: [
-        'javascript', 'python', 'java', 'react', 'angular', 'vue', 'nodejs', 
-        'php', 'csharp', 'cpp', 'sql', 'mongodb', 'aws', 'azure', 'docker', 
-        'kubernetes', 'devops', 'machine-learning', 'data-analysis', 
-        'project-management', 'sales', 'marketing', 'hr', 'finance', 
-        'accounting', 'design', 'ui-ux', 'content-writing', 'digital-marketing', 'other'
-      ]
+      trim: true,
+      maxlength: 80
     }],
     
     // Account Status
