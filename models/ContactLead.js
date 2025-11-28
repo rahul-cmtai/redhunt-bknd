@@ -29,7 +29,8 @@ const ContactLeadSchema = new mongoose.Schema(
     subject: { 
       type: String, 
       required: true,
-      enum: ['pricing', 'partnership', 'other'],
+      trim: true,
+      maxlength: 200,
       index: true
     },
     message: { 

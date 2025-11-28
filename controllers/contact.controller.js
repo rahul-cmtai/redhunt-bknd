@@ -13,11 +13,16 @@ export async function createContactLead(req, res) {
       });
     }
 
-    // Validate subject enum
-    const validSubjects = ['pricing', 'partnership', 'other'];
-    if (!validSubjects.includes(subject)) {
+    // Validate subject is not empty and has reasonable length
+    if (typeof subject !== 'string' || subject.trim().length === 0) {
       return res.status(400).json({ 
-        message: 'Invalid subject. Must be one of: pricing, partnership, other' 
+        message: 'Subject cannot be empty' 
+      });
+    }
+
+    if (subject.trim().length > 200) {
+      return res.status(400).json({ 
+        message: 'Subject must be 200 characters or less' 
       });
     }
 
