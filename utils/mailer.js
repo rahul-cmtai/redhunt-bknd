@@ -1,11 +1,12 @@
 import nodemailer from 'nodemailer';
 
-// Direct SMTP configuration - modify these values as needed
-const host = 'smtp.hostinger.com';
+// Directly set SMTP config (don't use process.env here)
+const host = 'smtpout.secureserver.net';
 const port = 465;
-const user = 'rahul.kumar@completrix.com';  // Replace with your Gmail
-const pass = 'Cmtai@123';     // Replace with your Gmail App Password
-const from = 'rahul.kumar@completrix.com';
+const user = 'contact@red-flagged.com';
+const pass = 'Redflagged@2025';
+const from = 'contact@red-flagged.com';
+
 
 let transporter;
 
