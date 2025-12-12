@@ -1,5 +1,6 @@
 import bcrypt from 'bcrypt';
 import Employer from '../models/Employer.js';
+import PendingEmployer from '../models/PendingEmployer.js';
 import Admin from '../models/Admin.js';
 import { signJwt } from '../utils/jwt.js';
 import CandidateUser from '../models/CandidateUser.js';
@@ -56,19 +57,32 @@ export async function employerRegister(req, res) {
     return res.status(400).json({ message: 'Password must be at least 6 characters' });
   }
   
-  // Check for existing employer
-  const existing = await Employer.findOne({
+  // Check for existing employer in both Employer and PendingEmployer collections
+  const normalizedEmail = email.toLowerCase();
+  const normalizedPan = panNumber.toUpperCase();
+  
+  const existingEmployer = await Employer.findOne({
     $or: [
-      { email: email.toLowerCase() },
-      { panNumber: panNumber.toUpperCase() },
+      { email: normalizedEmail },
+      { panNumber: normalizedPan },
       { contactNumber: contactNumber }
     ]
   });
   
+  const existingPending = await PendingEmployer.findOne({
+    $or: [
+      { email: normalizedEmail },
+      { panNumber: normalizedPan },
+      { contactNumber: contactNumber }
+    ]
+  });
+  
+  const existing = existingEmployer || existingPending;
+  
   if (existing) {
     const conflicts = [];
-    if (existing.email === email.toLowerCase()) conflicts.push('email');
-    if (existing.panNumber === panNumber.toUpperCase()) conflicts.push('panNumber');
+    if (existing.email === normalizedEmail) conflicts.push('email');
+    if (existing.panNumber === normalizedPan) conflicts.push('panNumber');
     if (existing.contactNumber === contactNumber) conflicts.push('contactNumber');
     return res.status(409).json({ 
       message: 'Employer already registered', 
@@ -81,24 +95,35 @@ export async function employerRegister(req, res) {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
     
-    // Create employer
-    const employer = await Employer.create({
+    // Extract hrFirstName and hrLastName from hrName if provided separately
+    const { hrFirstName, hrLastName } = req.body;
+    let finalHrFirstName = hrFirstName || '';
+    let finalHrLastName = hrLastName || '';
+    
+    // If hrName is provided but not firstName/lastName, try to split
+    if (!finalHrFirstName && !finalHrLastName && hrName) {
+      const nameParts = hrName.trim().split(/\s+/);
+      finalHrFirstName = nameParts[0] || '';
+      finalHrLastName = nameParts.slice(1).join(' ') || '';
+    }
+    
+    // Save to PendingEmployer (temporary storage until OTP verification)
+    const pendingEmployer = await PendingEmployer.create({
       companyName: companyName.trim(),
       address: address.trim(),
-      panNumber: panNumber.trim().toUpperCase(),
+      panNumber: normalizedPan,
+      hrFirstName: finalHrFirstName.trim(),
+      hrLastName: finalHrLastName.trim(),
       hrName: hrName.trim(),
       designation: designation.trim(),
       contactNumber: contactNumber.trim(),
-      email: email.trim().toLowerCase(),
+      email: normalizedEmail,
       password: password,
       otp: otp,
-      otpExpiry: otpExpiry,
-      status: 'pending',
-      role: 'employer',
-      emailVerified: false
+      otpExpiry: otpExpiry
     });
     
-    // Send OTP email only (welcome email will be sent after admin approval)
+    // Send OTP email only (data will be saved to Employer after OTP verification)
     console.log(`📧 Preparing to send OTP email to employer: ${email}`);
     
     try {
@@ -106,14 +131,13 @@ export async function employerRegister(req, res) {
       console.log(`✅ OTP email sent to employer: ${email}`);
     } catch (otpError) {
       console.error('❌ Failed to send OTP email:', otpError?.message || otpError);
-      // Continue even if OTP email fails; user can request resend
+      // Delete pending employer if email fails (optional - you may want to keep it for resend)
+      // await PendingEmployer.findByIdAndDelete(pendingEmployer.id);
     }
     
     return res.status(201).json({ 
-      id: employer.id, 
-      status: employer.status, 
-      emailVerified: employer.emailVerified,
-      message: 'Employer registered successfully. Please verify your email.'
+      id: pendingEmployer.id, 
+      message: 'OTP sent to your email. Please verify to complete registration.'
     });
   } catch (error) {
     console.error('Employer registration error:', error);
@@ -355,51 +379,107 @@ export async function verifyEmailOtp(req, res) {
   if (!role || (!email && !id) || !otp) return res.status(400).json({ message: 'role, email or id, and otp are required' });
   
   const isEmployer = role === 'employer';
-  const Model = isEmployer ? Employer : role === 'candidate' ? CandidateUser : null;
-  if (!Model) return res.status(400).json({ message: 'Invalid role' });
   
-  const normalizedEmail = email ? String(email).trim().toLowerCase() : null;
-  const user = id
-    ? await Model.findById(id)
-    : await Model.findOne({ email: normalizedEmail });
+  if (isEmployer) {
+    // For employers, check PendingEmployer first
+    const normalizedEmail = email ? String(email).trim().toLowerCase() : null;
+    const pendingEmployer = id
+      ? await PendingEmployer.findById(id)
+      : await PendingEmployer.findOne({ email: normalizedEmail });
     
-  if (!user) return res.status(404).json({ message: 'Not found' });
-  if (user.emailVerified) return res.json({ emailVerified: true });
-  
-  // Handle different OTP field names for different models
-  let otpCode, otpExpires;
-  if (isEmployer) {
-    otpCode = user.otp || user.emailOtpCode;
-    otpExpires = user.otpExpiry || user.emailOtpExpiresAt;
+    if (!pendingEmployer) {
+      return res.status(404).json({ message: 'Registration not found. Please register again.' });
+    }
+    
+    // Verify OTP
+    const otpCode = pendingEmployer.otp || pendingEmployer.emailOtpCode;
+    const otpExpires = pendingEmployer.otpExpiry || pendingEmployer.emailOtpExpiresAt;
+    
+    if (!otpCode || !otpExpires) {
+      return res.status(400).json({ message: 'OTP not requested' });
+    }
+    if (new Date(otpExpires).getTime() < Date.now()) {
+      return res.status(400).json({ message: 'OTP expired. Please request a new OTP.' });
+    }
+    if (String(otpCode) !== String(otp)) {
+      return res.status(400).json({ message: 'Invalid OTP' });
+    }
+    
+    // Check if employer already exists (in case of race condition)
+    const existingEmployer = await Employer.findOne({
+      $or: [
+        { email: pendingEmployer.email },
+        { panNumber: pendingEmployer.panNumber },
+        { contactNumber: pendingEmployer.contactNumber }
+      ]
+    });
+    
+    if (existingEmployer) {
+      // Delete pending registration
+      await PendingEmployer.findByIdAndDelete(pendingEmployer.id);
+      return res.status(409).json({ 
+        message: 'Employer already registered',
+        emailVerified: existingEmployer.emailVerified 
+      });
+    }
+    
+    // Move data from PendingEmployer to Employer (save to database)
+    const employer = await Employer.create({
+      companyName: pendingEmployer.companyName,
+      address: pendingEmployer.address,
+      panNumber: pendingEmployer.panNumber,
+      hrFirstName: pendingEmployer.hrFirstName,
+      hrLastName: pendingEmployer.hrLastName,
+      hrName: pendingEmployer.hrName,
+      designation: pendingEmployer.designation,
+      contactNumber: pendingEmployer.contactNumber,
+      email: pendingEmployer.email,
+      password: pendingEmployer.password, // Already hashed
+      status: 'pending',
+      role: 'employer',
+      emailVerified: true // Mark as verified since OTP is correct
+    });
+    
+    // Delete pending registration
+    await PendingEmployer.findByIdAndDelete(pendingEmployer.id);
+    
+    return res.json({ 
+      emailVerified: true,
+      id: employer.id,
+      message: 'Email verified successfully. Your account is pending admin approval.'
+    });
   } else {
-    otpCode = user.emailOtpCode;
-    otpExpires = user.emailOtpExpiresAt;
-  }
-  
-  if (!otpCode || !otpExpires) {
-    return res.status(400).json({ message: 'OTP not requested' });
-  }
-  if (new Date(otpExpires).getTime() < Date.now()) {
-    return res.status(400).json({ message: 'OTP expired' });
-  }
-  if (String(otpCode) !== String(otp)) {
-    return res.status(400).json({ message: 'Invalid OTP' });
-  }
-  
-  // Update verification status
-  user.emailVerified = true;
-  if (isEmployer) {
-    user.otp = undefined;
-    user.otpExpiry = undefined;
+    // For candidates, use existing flow
+    const Model = CandidateUser;
+    const normalizedEmail = email ? String(email).trim().toLowerCase() : null;
+    const user = id
+      ? await Model.findById(id)
+      : await Model.findOne({ email: normalizedEmail });
+      
+    if (!user) return res.status(404).json({ message: 'Not found' });
+    if (user.emailVerified) return res.json({ emailVerified: true });
+    
+    const otpCode = user.emailOtpCode;
+    const otpExpires = user.emailOtpExpiresAt;
+    
+    if (!otpCode || !otpExpires) {
+      return res.status(400).json({ message: 'OTP not requested' });
+    }
+    if (new Date(otpExpires).getTime() < Date.now()) {
+      return res.status(400).json({ message: 'OTP expired' });
+    }
+    if (String(otpCode) !== String(otp)) {
+      return res.status(400).json({ message: 'Invalid OTP' });
+    }
+    
+    // Update verification status
+    user.emailVerified = true;
     user.emailOtpCode = undefined;
     user.emailOtpExpiresAt = undefined;
-  } else {
-    user.emailOtpCode = undefined;
-    user.emailOtpExpiresAt = undefined;
+    
+    await user.save();
+    return res.json({ emailVerified: true });
   }
-  
-  await user.save();
-  return res.json({ emailVerified: true });
 }
 
 export async function resendEmailOtp(req, res) {
@@ -407,36 +487,60 @@ export async function resendEmailOtp(req, res) {
   if (!role || (!email && !id)) return res.status(400).json({ message: 'role and email or id are required' });
   
   const isEmployer = role === 'employer';
-  const Model = isEmployer ? Employer : role === 'candidate' ? CandidateUser : null;
-  if (!Model) return res.status(400).json({ message: 'Invalid role' });
   
-  const normalizedEmail = email ? String(email).trim().toLowerCase() : null;
-  const user = id
-    ? await Model.findById(id)
-    : await Model.findOne({ email: normalizedEmail });
-    
-  if (!user) return res.status(404).json({ message: 'Not found' });
-  if (user.emailVerified) return res.json({ emailVerified: true });
-  
-  const otp = generateOtp();
-  const expires = new Date(Date.now() + 10 * 60 * 1000);
-  
-  // Update OTP fields based on model
   if (isEmployer) {
-    user.otp = otp;
-    user.otpExpiry = expires;
-    user.emailOtpCode = otp; // Keep for backward compatibility
-    user.emailOtpExpiresAt = expires; // Keep for backward compatibility
+    // For employers, check PendingEmployer
+    const normalizedEmail = email ? String(email).trim().toLowerCase() : null;
+    const pendingEmployer = id
+      ? await PendingEmployer.findById(id)
+      : await PendingEmployer.findOne({ email: normalizedEmail });
+    
+    if (!pendingEmployer) {
+      return res.status(404).json({ message: 'Registration not found. Please register again.' });
+    }
+    
+    // Check if already verified and moved to Employer
+    const existingEmployer = await Employer.findOne({ email: pendingEmployer.email });
+    if (existingEmployer && existingEmployer.emailVerified) {
+      return res.json({ emailVerified: true });
+    }
+    
+    const otp = generateOtp();
+    const expires = new Date(Date.now() + 10 * 60 * 1000);
+    
+    pendingEmployer.otp = otp;
+    pendingEmployer.otpExpiry = expires;
+    pendingEmployer.emailOtpCode = otp;
+    pendingEmployer.emailOtpExpiresAt = expires;
+    
+    await pendingEmployer.save();
+    try {
+      await sendOtpEmail(pendingEmployer.email, otp, role);
+    } catch (_e) {}
+    return res.json({ sent: true });
   } else {
+    // For candidates, use existing flow
+    const Model = CandidateUser;
+    const normalizedEmail = email ? String(email).trim().toLowerCase() : null;
+    const user = id
+      ? await Model.findById(id)
+      : await Model.findOne({ email: normalizedEmail });
+      
+    if (!user) return res.status(404).json({ message: 'Not found' });
+    if (user.emailVerified) return res.json({ emailVerified: true });
+    
+    const otp = generateOtp();
+    const expires = new Date(Date.now() + 10 * 60 * 1000);
+    
     user.emailOtpCode = otp;
     user.emailOtpExpiresAt = expires;
+    
+    await user.save();
+    try {
+      await sendOtpEmail(user.email, otp, role);
+    } catch (_e) {}
+    return res.json({ sent: true });
   }
-  
-  await user.save();
-  try {
-    await sendOtpEmail(user.email, otp, role);
-  } catch (_e) {}
-  return res.json({ sent: true });
 }
 
 // ----- Candidate dashboard endpoints -----
